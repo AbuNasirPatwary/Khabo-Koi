@@ -26,6 +26,7 @@ const foodData = [
         name: 'Mutton Kacchi Biryani',
         category: 'Kacchi',
         restaurant: "Sultan's Dine",
+        restaurantId: 1,
         location: 'Dhanmondi',
         price: 580,
         rating: 4.9,
@@ -36,6 +37,7 @@ const foodData = [
         name: 'Classic Beef Burger',
         category: 'Burger',
         restaurant: 'Chillox',
+        restaurantId: 2,
         location: 'Banani',
         price: 320,
         rating: 4.8,
@@ -46,6 +48,7 @@ const foodData = [
         name: 'Pepperoni Pizza',
         category: 'Pizza',
         restaurant: 'Pizza Lounge',
+        restaurantId: null,
         location: 'Dhanmondi',
         price: 650,
         rating: 4.6,
@@ -56,6 +59,7 @@ const foodData = [
         name: 'Chicken Chow Mein',
         category: 'Chinese',
         restaurant: 'Asian Kitchen',
+        restaurantId: null,
         location: 'Uttara',
         price: 380,
         rating: 4.5,
@@ -66,6 +70,7 @@ const foodData = [
         name: 'Grilled Seafood Platter',
         category: 'Seafood',
         restaurant: 'Ocean Basket',
+        restaurantId: null,
         location: 'Banani',
         price: 890,
         rating: 4.7,
@@ -76,6 +81,7 @@ const foodData = [
         name: 'Chocolate Lava Cake',
         category: 'Desserts',
         restaurant: 'Sweet House',
+        restaurantId: null,
         location: 'Mirpur',
         price: 280,
         rating: 4.6,
@@ -86,6 +92,7 @@ const foodData = [
         name: 'Chicken Burger',
         category: 'Burger',
         restaurant: 'Madchef',
+        restaurantId: 3,
         location: 'Uttara',
         price: 350,
         rating: 4.7,
@@ -96,6 +103,7 @@ const foodData = [
         name: 'Special Kacchi',
         category: 'Kacchi',
         restaurant: 'Kacchi Bhai',
+        restaurantId: 4,
         location: 'Mirpur',
         price: 520,
         rating: 4.8,
@@ -359,11 +367,10 @@ function BrowseFood() {
                                     onClick={() =>
                                         setSelectedCategory(category)
                                     }
-                                    className={`rounded-full border px-4 py-2 text-xs font-medium transition ${
-                                        selectedCategory === category
+                                    className={`rounded-full border px-4 py-2 text-xs font-medium transition ${selectedCategory === category
                                             ? 'border-orange-500 bg-orange-500 text-white'
                                             : 'border-gray-200 text-gray-600 hover:border-orange-400 hover:text-orange-500'
-                                    }`}
+                                        }`}
                                 >
 
                                     {category}
@@ -446,15 +453,15 @@ function BrowseFood() {
                                 selectedLocation !== 'All Locations' ||
                                 sortBy !== 'recommended') && (
 
-                                <button
-                                    type="button"
-                                    onClick={clearFilters}
-                                    className="text-sm font-semibold text-orange-500 transition hover:text-orange-600 sm:ml-auto"
-                                >
-                                    Clear Filters
-                                </button>
+                                    <button
+                                        type="button"
+                                        onClick={clearFilters}
+                                        className="text-sm font-semibold text-orange-500 transition hover:text-orange-600 sm:ml-auto"
+                                    >
+                                        Clear Filters
+                                    </button>
 
-                            )}
+                                )}
 
                         </div>
 
@@ -622,12 +629,26 @@ function BrowseFood() {
                                         Later this button will open the restaurant
                                         details / reservation flow. */}
 
-                                    <button
-                                        type="button"
-                                        className="mt-5 w-full rounded-xl border border-orange-500 px-4 py-3 text-sm font-semibold text-orange-500 transition hover:bg-orange-50"
-                                    >
-                                        View & Reserve
-                                    </button>
+                                    {food.restaurantId ? (
+
+                                        <Link
+                                            to={`/restaurants/${food.restaurantId}#reservation`}
+                                            className="mt-5 block w-full rounded-xl border border-orange-500 px-4 py-3 text-center text-sm font-semibold text-orange-500 transition hover:bg-orange-50"
+                                        >
+                                            View & Reserve
+                                        </Link>
+
+                                    ) : (
+
+                                        <button
+                                            type="button"
+                                            disabled
+                                            className="mt-5 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-400"
+                                        >
+                                            Reservation unavailable
+                                        </button>
+
+                                    )}
 
 
                                 </div>
