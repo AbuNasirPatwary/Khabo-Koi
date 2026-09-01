@@ -143,6 +143,7 @@ class BookingSerializer(serializers.ModelSerializer):
 
         fields = [
             'id',
+            'user',
             'restaurant_name',
             'branch',
             'branch_name',

@@ -6,6 +6,8 @@ import Restaurants from './pages/Restaurants'
 import BrowseFood from './pages/BrowseFood'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Profile from './pages/Profile'
+import MyBookings from './pages/MyBookings'
 
 
 function App() {
@@ -44,6 +46,16 @@ function App() {
         <Route
           path="/register"
           element={<Register />}
+        />
+
+        <Route
+          path="/my-bookings"
+          element={<MyBookings />}
+        />
+
+        <Route
+          path="/profile"
+          element={<Profile />}
         />
 
       </Routes>

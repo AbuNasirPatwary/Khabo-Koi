@@ -1,9 +1,11 @@
+
 from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_time
 
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from rest_framework.generics import (
     ListAPIView,
@@ -379,6 +381,8 @@ class TableAvailabilityAPIView(APIView):
 # =============================================================================
 
 class BookingCreateAPIView(APIView):
+    
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
@@ -561,6 +565,7 @@ class BookingCreateAPIView(APIView):
             booking = Booking.objects.create(
                 branch=table.branch,
                 table=table,
+                user=request.user,
                 reservation_date=reservation_date,
                 start_time=start_time,
                 end_time=end_time,
@@ -580,4 +585,19 @@ class BookingCreateAPIView(APIView):
         return Response(
             serializer.data,
             status=status.HTTP_201_CREATED,
+        )
+
+class MyBookingsAPIView(ListAPIView):
+
+    serializer_class = BookingSerializer
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get_queryset(self):
+
+        return Booking.objects.filter(
+            user=self.request.user
+        ).order_by(
+            '-created_at'
         )
