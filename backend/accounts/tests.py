@@ -1,12 +1,20 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, transaction
 from django.test import TestCase
+from rest_framework.test import APIRequestFactory
 
 from restaurants.models import Restaurant
 
 from .models import (
     RestaurantManagerAssignment,
     UserProfile,
+)
+from .permissions import (
+    HasActiveRestaurantAssignment,
+    IsPlatformAdmin,
+    IsRestaurantManager,
+    get_managed_restaurant_ids,
 )
 
 
@@ -213,4 +221,305 @@ class RestaurantManagerAssignmentModelTests(TestCase):
             RestaurantManagerAssignment.objects.filter(
                 id=assignment.id,
             ).exists()
+        )
+# =============================================================================
+# ROLE AND ASSIGNMENT PERMISSION TESTS
+# =============================================================================
+# These tests prove that authentication, role and restaurant assignment are
+# separate security requirements.
+#
+# A logged-in user is not automatically a Manager or Platform Admin.
+# A Manager role does not automatically grant access to every restaurant.
+# A Django staff account is not automatically a Khabo-Koi Platform Admin.
+# =============================================================================
+
+class RolePermissionTests(TestCase):
+
+    def setUp(self):
+
+        # APIRequestFactory creates lightweight requests that can be passed
+        # directly to DRF permission classes.
+        self.request_factory = APIRequestFactory()
+
+        self.customer = User.objects.create_user(
+            username="permission-customer",
+            email="permission-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="permission-manager",
+            email="permission-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.platform_admin = User.objects.create_user(
+            username="permission-admin",
+            email="permission-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        # This user can access Django Admin because is_staff=True, but must not
+        # automatically receive access to the Khabo-Koi Platform Admin portal.
+        self.django_staff_user = User.objects.create_user(
+            username="django-staff",
+            email="django-staff@example.com",
+            password="test-password-123",
+            is_staff=True,
+        )
+
+        self.restaurant_one = Restaurant.objects.create(
+            name="Restaurant One",
+            cuisine="Test Cuisine",
+        )
+
+        self.restaurant_two = Restaurant.objects.create(
+            name="Restaurant Two",
+            cuisine="Test Cuisine",
+        )
+
+    def create_request(self, user):
+
+        request = self.request_factory.get(
+            "/test-permission/"
+        )
+
+        # In a real API request DRF authentication sets request.user.
+        # Assigning it directly lets us test permission behavior in isolation.
+        request.user = user
+
+        return request
+
+    def test_anonymous_user_is_denied_by_all_permissions(self):
+
+        request = self.create_request(
+            AnonymousUser()
+        )
+
+        self.assertFalse(
+            IsRestaurantManager().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertFalse(
+            IsPlatformAdmin().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertFalse(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_customer_is_not_manager_or_platform_admin(self):
+
+        request = self.create_request(
+            self.customer
+        )
+
+        self.assertFalse(
+            IsRestaurantManager().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertFalse(
+            IsPlatformAdmin().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_customer_with_assignment_is_still_not_manager(self):
+
+        # An assignment alone must not grant Manager access. The user must
+        # also have the RESTAURANT_MANAGER role.
+        RestaurantManagerAssignment.objects.create(
+            user=self.customer,
+            restaurant=self.restaurant_one,
+        )
+
+        request = self.create_request(
+            self.customer
+        )
+
+        self.assertFalse(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_restaurant_manager_role_is_accepted(self):
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertTrue(
+            IsRestaurantManager().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertFalse(
+            IsPlatformAdmin().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_platform_admin_role_is_accepted(self):
+
+        request = self.create_request(
+            self.platform_admin
+        )
+
+        self.assertTrue(
+            IsPlatformAdmin().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertFalse(
+            IsRestaurantManager().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_django_staff_is_not_automatically_platform_admin(self):
+
+        request = self.create_request(
+            self.django_staff_user
+        )
+
+        self.assertFalse(
+            IsPlatformAdmin().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_inactive_manager_is_denied(self):
+
+        self.manager.is_active = False
+
+        self.manager.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertFalse(
+            IsRestaurantManager().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_manager_without_assignment_is_denied_assignment_access(self):
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertFalse(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_manager_with_active_assignment_is_accepted(self):
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant_one,
+            assigned_by=self.platform_admin,
+        )
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertTrue(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_inactive_assignment_does_not_grant_access(self):
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant_one,
+            assigned_by=self.platform_admin,
+            is_active=False,
+        )
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertFalse(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+    def test_managed_restaurant_ids_include_only_active_assignments(self):
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant_one,
+            assigned_by=self.platform_admin,
+            is_active=True,
+        )
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant_two,
+            assigned_by=self.platform_admin,
+            is_active=False,
+        )
+
+        managed_restaurant_ids = list(
+            get_managed_restaurant_ids(
+                self.manager
+            )
+        )
+
+        self.assertEqual(
+            managed_restaurant_ids,
+            [
+                self.restaurant_one.id,
+            ],
         )
