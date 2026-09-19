@@ -14,6 +14,12 @@ from rest_framework.generics import (
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import (
+    IsRestaurantManager,
+    HasActiveRestaurantAssignment,
+    get_managed_restaurant_ids,
+)
+
 from .models import (
     Restaurant,
     Branch,
@@ -27,6 +33,7 @@ from .serializers import (
     FoodItemSerializer,
     RestaurantTableSerializer,
     BookingSerializer,
+    ManagerRestaurantSerializer,
 )
 
 
@@ -600,4 +607,140 @@ class MyBookingsAPIView(ListAPIView):
             user=self.request.user
         ).order_by(
             '-created_at'
+        )
+
+# =============================================================================
+# MANAGER RESTAURANT DETAILS
+# =============================================================================
+# GET /api/manager/restaurant/
+#
+# Returns only restaurants actively assigned to the authenticated
+# Restaurant Manager.
+# =============================================================================
+
+class ManagerRestaurantAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        restaurants = Restaurant.objects.filter(
+            id__in=restaurant_ids,
+        ).order_by(
+            'name'
+        )
+
+        serializer = ManagerRestaurantSerializer(
+            restaurants,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+    def patch(self, request):
+
+        restaurant_ids = list(
+            get_managed_restaurant_ids(
+                request.user
+            )
+        )
+
+        requested_restaurant_id = request.data.get(
+            'restaurant_id'
+        )
+
+        # If the Manager has multiple restaurants, require them
+        # to identify which assigned restaurant they want to edit.
+        if requested_restaurant_id is None:
+
+            if len(restaurant_ids) != 1:
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id is required when managing multiple restaurants.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            restaurant_id = restaurant_ids[0]
+
+        else:
+
+            try:
+                restaurant_id = int(
+                    requested_restaurant_id
+                )
+
+            except (TypeError, ValueError):
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id must be a valid number.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+        # Only allow access to an actively assigned restaurant.
+        try:
+
+            restaurant = Restaurant.objects.get(
+                id=restaurant_id,
+                id__in=restaurant_ids,
+            )
+
+        except Restaurant.DoesNotExist:
+
+            return Response(
+                {
+                    'error':
+                        'Restaurant not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+        # Manager may edit only approved profile fields.
+        allowed_fields = {
+            'name',
+            'cuisine',
+            'description',
+            'image_url',
+        }
+
+        update_data = {
+            key: value
+            for key, value in request.data.items()
+            if key in allowed_fields
+        }
+
+
+        serializer = ManagerRestaurantSerializer(
+            restaurant,
+            data=update_data,
+            partial=True,
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
         )

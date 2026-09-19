@@ -7,6 +7,7 @@ from .views import (
     TableAvailabilityAPIView,
     BookingCreateAPIView,
     MyBookingsAPIView,
+    ManagerRestaurantAPIView,
 )
 
 
@@ -52,6 +53,12 @@ urlpatterns = [
     'my-bookings/',
     MyBookingsAPIView.as_view(),
     name='my-bookings',
+    ),
+
+    path(
+        'manager/restaurant/',
+        ManagerRestaurantAPIView.as_view(),
+        name='manager-restaurant',
     ),
 
 ]

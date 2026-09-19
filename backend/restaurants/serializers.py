@@ -158,3 +158,33 @@ class BookingSerializer(serializers.ModelSerializer):
             'status',
             'created_at',
         ]
+
+# =============================================================================
+# MANAGER RESTAURANT
+# =============================================================================
+# Restaurant profile data exposed to an authenticated Restaurant Manager.
+#
+# Rating and activation status are visible but cannot be changed through the
+# Manager API. Ownership and restaurant selection are enforced in the view.
+# =============================================================================
+
+class ManagerRestaurantSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Restaurant
+
+        fields = [
+            'id',
+            'name',
+            'cuisine',
+            'description',
+            'rating',
+            'image_url',
+            'is_active',
+        ]
+
+        read_only_fields = [
+            'id',
+            'rating',
+            'is_active',
+        ]
