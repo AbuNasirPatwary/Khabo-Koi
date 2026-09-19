@@ -2,7 +2,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, transaction
 from django.test import TestCase
-from rest_framework.test import APIRequestFactory
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import (
+    APIRequestFactory,
+    APITestCase,
+)
 
 from restaurants.models import Restaurant
 
@@ -17,6 +22,7 @@ from .permissions import (
     get_managed_restaurant_ids,
 )
 
+from django.urls import reverse
 
 User = get_user_model()
 
@@ -522,4 +528,241 @@ class RolePermissionTests(TestCase):
             [
                 self.restaurant_one.id,
             ],
+        )
+# =============================================================================
+# AUTHENTICATED PROFILE API TESTS
+# =============================================================================
+# These tests exercise the real /api/accounts/profile/ endpoint.
+#
+# The endpoint gives React enough information to:
+#
+# - display the authenticated user's identity;
+# - choose the correct Customer, Manager or Admin interface;
+# - show a Restaurant Manager only their actively assigned restaurants.
+#
+# It must never expose passwords, JWT tokens or inactive assignments.
+# =============================================================================
+
+class ProfileAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.profile_url = reverse(
+            "profile"
+        )
+
+        self.customer = User.objects.create_user(
+            username="profile-customer",
+            email="profile-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="profile-manager",
+            email="profile-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.platform_admin = User.objects.create_user(
+            username="profile-admin",
+            email="profile-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        # The names intentionally use reverse alphabetical creation order.
+        # This lets the test prove that the API sorts them by name.
+        self.zulu_restaurant = Restaurant.objects.create(
+            name="Zulu Restaurant",
+            cuisine="Test Cuisine",
+        )
+
+        self.alpha_restaurant = Restaurant.objects.create(
+            name="Alpha Restaurant",
+            cuisine="Test Cuisine",
+        )
+
+        self.inactive_restaurant = Restaurant.objects.create(
+            name="Inactive Restaurant",
+            cuisine="Test Cuisine",
+        )
+
+    def authenticate(self, user):
+
+        # force_authenticate keeps these tests focused on the profile endpoint.
+        # JWT login behavior is provided separately by SimpleJWT.
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def test_anonymous_user_cannot_access_profile(self):
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_receives_identity_role_and_no_assignments(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data,
+            {
+                "id": self.customer.id,
+                "username": self.customer.username,
+                "email": self.customer.email,
+                "role": UserProfile.Role.CUSTOMER,
+                "assigned_restaurants": [],
+            },
+        )
+
+    def test_manager_receives_only_active_assigned_restaurants(self):
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.zulu_restaurant,
+            assigned_by=self.platform_admin,
+            is_active=True,
+        )
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.alpha_restaurant,
+            assigned_by=self.platform_admin,
+            is_active=True,
+        )
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.inactive_restaurant,
+            assigned_by=self.platform_admin,
+            is_active=False,
+        )
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        # Active assignments are ordered alphabetically for predictable UI.
+        self.assertEqual(
+            response.data["assigned_restaurants"],
+            [
+                {
+                    "id": self.alpha_restaurant.id,
+                    "name": self.alpha_restaurant.name,
+                },
+                {
+                    "id": self.zulu_restaurant.id,
+                    "name": self.zulu_restaurant.name,
+                },
+            ],
+        )
+
+    def test_platform_admin_receives_admin_role_and_no_assignments(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["role"],
+            UserProfile.Role.ADMIN,
+        )
+
+        self.assertEqual(
+            response.data["assigned_restaurants"],
+            [],
+        )
+
+    def test_customer_assignment_does_not_leak_manager_access(self):
+
+        # Even if incorrect data assigns a restaurant to a Customer, the API
+        # must not treat that Customer as a Restaurant Manager.
+        RestaurantManagerAssignment.objects.create(
+            user=self.customer,
+            restaurant=self.alpha_restaurant,
+            assigned_by=self.platform_admin,
+        )
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertEqual(
+            response.data["assigned_restaurants"],
+            [],
+        )
+
+    def test_profile_does_not_expose_sensitive_fields(self):
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.get(
+            self.profile_url
+        )
+
+        self.assertNotIn(
+            "password",
+            response.data,
+        )
+
+        self.assertNotIn(
+            "access",
+            response.data,
+        )
+
+        self.assertNotIn(
+            "refresh",
+            response.data,
         )
