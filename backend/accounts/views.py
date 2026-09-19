@@ -4,8 +4,10 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from .serializers import RegisterSerializer
-
+from .serializers import (
+    ProfileSerializer,
+    RegisterSerializer,
+)
 
 class RegisterView(generics.CreateAPIView):
 
@@ -36,19 +38,27 @@ class RegisterView(generics.CreateAPIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+# =============================================================================
+# AUTHENTICATED PROFILE
+# =============================================================================
+# GET /api/accounts/profile/
+#
+# JWT authentication identifies request.user. ProfileSerializer then exposes
+# the safe identity, role and assignment information needed by React.
+# =============================================================================
+
 class ProfileView(APIView):
 
-    permission_classes = [IsAuthenticated]
-
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get(self, request):
 
-        user = request.user
-
+        serializer = ProfileSerializer(
+            request.user,
+        )
 
         return Response(
-            {
-                "username": user.username,
-                "email": user.email,
-            }
+            serializer.data
         )
