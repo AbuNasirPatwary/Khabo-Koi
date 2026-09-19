@@ -764,3 +764,247 @@ class ProfileAPITests(APITestCase):
             "refresh",
             response.data,
         )
+
+
+# =============================================================================
+# PLATFORM ADMIN USER LIST API TESTS
+# =============================================================================
+# These tests verify that the user overview is available only to an explicit
+# Khabo-Koi Platform Admin.
+#
+# Being authenticated, having the Restaurant Manager role, or having Django's
+# is_staff flag must not independently grant Platform Admin access.
+# =============================================================================
+
+class PlatformAdminUserListAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.user_list_url = reverse(
+            "platform_admin_user_list"
+        )
+
+        self.customer = User.objects.create_user(
+            username="zulu-customer",
+            email="customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="alpha-manager",
+            email="manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.platform_admin = User.objects.create_user(
+            username="middle-admin",
+            email="admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        # Django staff access and Khabo-Koi Platform Admin access are separate.
+        self.django_staff_user = User.objects.create_user(
+            username="django-staff",
+            email="django-staff@example.com",
+            password="test-password-123",
+            is_staff=True,
+        )
+
+        # Suspended accounts must remain visible in the Admin overview.
+        self.inactive_customer = User.objects.create_user(
+            username="inactive-customer",
+            email="inactive@example.com",
+            password="test-password-123",
+            is_active=False,
+        )
+
+    def authenticate(self, user):
+
+        # JWT behavior is tested separately. force_authenticate lets these
+        # tests focus specifically on endpoint authorization and output.
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def test_anonymous_user_cannot_list_users(self):
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_cannot_list_users(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_restaurant_manager_cannot_list_users(self):
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_django_staff_user_is_not_platform_admin(self):
+
+        self.authenticate(
+            self.django_staff_user
+        )
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_platform_admin_receives_all_users_in_username_order(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        expected_usernames = list(
+            User.objects
+            .order_by(
+                "username",
+            )
+            .values_list(
+                "username",
+                flat=True,
+            )
+        )
+
+        returned_usernames = [
+            user_data["username"]
+            for user_data in response.data
+        ]
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            returned_usernames,
+            expected_usernames,
+        )
+
+        users_by_username = {
+            user_data["username"]: user_data
+            for user_data in response.data
+        }
+
+        # The Admin table must show product roles, not Django staff status.
+        self.assertEqual(
+            users_by_username[
+                self.manager.username
+            ]["role"],
+            UserProfile.Role.RESTAURANT_MANAGER,
+        )
+
+        self.assertEqual(
+            users_by_username[
+                self.platform_admin.username
+            ]["role"],
+            UserProfile.Role.ADMIN,
+        )
+
+        self.assertEqual(
+            users_by_username[
+                self.django_staff_user.username
+            ]["role"],
+            UserProfile.Role.CUSTOMER,
+        )
+
+        inactive_user_data = next(
+            user_data
+            for user_data in response.data
+            if user_data["id"]
+            == self.inactive_customer.id
+        )
+
+        self.assertFalse(
+            inactive_user_data["is_active"]
+        )
+
+    def test_user_list_exposes_only_approved_fields(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.get(
+            self.user_list_url
+        )
+
+        approved_fields = {
+            "id",
+            "username",
+            "email",
+            "role",
+            "is_active",
+            "date_joined",
+        }
+
+        for user_data in response.data:
+
+            self.assertEqual(
+                set(user_data.keys()),
+                approved_fields,
+            )
+
+            self.assertNotIn(
+                "password",
+                user_data,
+            )
+
+            self.assertNotIn(
+                "is_staff",
+                user_data,
+            )
+
+            self.assertNotIn(
+                "is_superuser",
+                user_data,
+            )

@@ -1,13 +1,19 @@
-from rest_framework import generics
-from rest_framework.response import Response
-from rest_framework import status
+from django.contrib.auth import get_user_model
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .permissions import IsPlatformAdmin
 from .serializers import (
+    PlatformAdminUserSerializer,
     ProfileSerializer,
     RegisterSerializer,
 )
+
+
+User = get_user_model()
+
 
 class RegisterView(generics.CreateAPIView):
 
@@ -61,4 +67,43 @@ class ProfileView(APIView):
 
         return Response(
             serializer.data
+        )
+
+
+# =============================================================================
+# PLATFORM ADMIN USER LIST
+# =============================================================================
+# GET /api/accounts/admin/users/
+#
+# This endpoint gives Platform Admins a safe, read-only overview of user
+# accounts. Role modification will be implemented separately so reading data
+# and changing authorization remain independently testable operations.
+# =============================================================================
+
+class PlatformAdminUserListView(generics.ListAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminUserSerializer
+    )
+
+    def get_queryset(self):
+
+        # select_related loads each UserProfile in the same database query,
+        # avoiding one additional query for every user in the Admin table.
+        #
+        # Inactive users remain visible because Platform Admins need to inspect
+        # suspended accounts as well as active ones.
+        return (
+            User.objects
+            .select_related(
+                "profile",
+            )
+            .order_by(
+                "username",
+            )
         )

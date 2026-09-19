@@ -127,3 +127,50 @@ class ProfileSerializer(serializers.ModelSerializer):
             }
             for assignment in assignments
         ]
+
+
+# =============================================================================
+# PLATFORM ADMIN USER LIST
+# =============================================================================
+# Platform Admins need a safe overview of Khabo-Koi user accounts before they
+# can manage roles or restaurant assignments.
+#
+# This serializer is intentionally read-only. It exposes identity, product
+# role and account status, but never exposes passwords, tokens or Django
+# permission internals.
+# =============================================================================
+
+class PlatformAdminUserSerializer(serializers.ModelSerializer):
+
+    role = serializers.SerializerMethodField()
+
+    class Meta:
+
+        model = User
+
+        fields = [
+            "id",
+            "username",
+            "email",
+            "role",
+            "is_active",
+            "date_joined",
+        ]
+
+        read_only_fields = fields
+
+    def get_role(self, user):
+
+        # Profiles are normally guaranteed by the UserProfile creation signal
+        # and data migration. The fallback prevents one incomplete legacy user
+        # from breaking the entire Admin user list.
+        profile = getattr(
+            user,
+            "profile",
+            None,
+        )
+
+        if profile is None:
+            return None
+
+        return profile.role

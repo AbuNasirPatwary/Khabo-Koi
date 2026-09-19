@@ -1,37 +1,51 @@
 from django.urls import path
-from .views import RegisterView, ProfileView
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
-from .views import RegisterView
+from .views import (
+    PlatformAdminUserListView,
+    ProfileView,
+    RegisterView,
+)
 
 
 urlpatterns = [
 
+    # Public account registration.
     path(
-        'register/',
+        "register/",
         RegisterView.as_view(),
-        name='register',
+        name="register",
     ),
 
+    # JWT authentication and access-token renewal.
     path(
-        'login/',
+        "login/",
         TokenObtainPairView.as_view(),
-        name='login',
+        name="login",
     ),
 
     path(
-        'token/refresh/',
+        "token/refresh/",
         TokenRefreshView.as_view(),
-        name='token_refresh',
+        name="token_refresh",
     ),
 
+    # Identity, product role and restaurant assignments for the currently
+    # authenticated user.
     path(
-    'profile/',
-    ProfileView.as_view(),
-    name='profile',
+        "profile/",
+        ProfileView.as_view(),
+        name="profile",
+    ),
+
+    # Platform Admin-only account overview.
+    path(
+        "admin/users/",
+        PlatformAdminUserListView.as_view(),
+        name="platform_admin_user_list",
     ),
 
 ]
