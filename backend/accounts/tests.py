@@ -22,8 +22,6 @@ from .permissions import (
     get_managed_restaurant_ids,
 )
 
-from django.urls import reverse
-
 User = get_user_model()
 
 
