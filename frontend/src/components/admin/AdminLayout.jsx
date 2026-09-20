@@ -31,7 +31,7 @@ const navigationItems = [
   {
     label: 'Bookings',
     symbol: 'B',
-    to: null,
+    to: '/platform-admin/bookings',
   },
   {
     label: 'System Settings',

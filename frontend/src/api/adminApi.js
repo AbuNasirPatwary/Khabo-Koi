@@ -318,6 +318,21 @@ export async function updatePlatformAdminRestaurantStatus(
 }
 
 
+export async function getPlatformAdminBookings() {
+  const response = await fetch(
+    `${API_URL}/admin/bookings/`,
+    {
+      headers: getAuthorizationHeaders(),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to load booking oversight data.',
+  )
+}
+
+
 export function clearAuthentication() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')

@@ -9,6 +9,7 @@ import Register from './pages/Register'
 import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
 import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminBookings from './pages/admin/AdminBookings'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminManagerAssignments from './pages/admin/AdminManagerAssignments'
 import AdminRestaurants from './pages/admin/AdminRestaurants'
@@ -101,6 +102,15 @@ function App() {
           element={(
             <ProtectedAdminRoute>
               <AdminManagerAssignments />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/bookings"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminBookings />
             </ProtectedAdminRoute>
           )}
         />
