@@ -16,7 +16,7 @@ const navigationItems = [
   {
     label: 'Restaurants',
     symbol: 'R',
-    to: null,
+    to: '/platform-admin/restaurants',
   },
   {
     label: 'Users',

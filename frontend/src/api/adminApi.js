@@ -278,6 +278,46 @@ export async function getRestaurantsForAdminAssignment() {
 }
 
 
+export async function getPlatformAdminRestaurants() {
+  const response = await fetch(
+    `${API_URL}/admin/restaurants/`,
+    {
+      headers: getAuthorizationHeaders(),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to load restaurant oversight data.',
+  )
+}
+
+
+export async function updatePlatformAdminRestaurantStatus(
+  restaurantId,
+  isActive,
+) {
+  const response = await fetch(
+    `${API_URL}/admin/restaurants/${restaurantId}/status/`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...getAuthorizationHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        is_active: isActive,
+      }),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to update the restaurant status.',
+  )
+}
+
+
 export function clearAuthentication() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
