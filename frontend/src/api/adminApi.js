@@ -200,6 +200,84 @@ export async function updatePlatformAdminAccountStatus(
 }
 
 
+export async function getPlatformAdminManagerAssignments() {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/manager-assignments/`,
+    {
+      headers: getAuthorizationHeaders(),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to load Manager assignments.',
+  )
+}
+
+
+export async function createPlatformAdminManagerAssignment(
+  userId,
+  restaurantId,
+) {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/manager-assignments/`,
+    {
+      method: 'POST',
+      headers: {
+        ...getAuthorizationHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        restaurant_id: restaurantId,
+      }),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to create the Manager assignment.',
+  )
+}
+
+
+export async function updatePlatformAdminManagerAssignment(
+  assignmentId,
+  isActive,
+) {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/manager-assignments/${assignmentId}/`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...getAuthorizationHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        is_active: isActive,
+      }),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to update the Manager assignment.',
+  )
+}
+
+
+export async function getRestaurantsForAdminAssignment() {
+  const response = await fetch(
+    `${API_URL}/restaurants/`,
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to load restaurants.',
+  )
+}
+
+
 export function clearAuthentication() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')

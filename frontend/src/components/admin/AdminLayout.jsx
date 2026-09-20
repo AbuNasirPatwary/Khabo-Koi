@@ -24,6 +24,11 @@ const navigationItems = [
     to: '/platform-admin/users',
   },
   {
+    label: 'Manager Access',
+    symbol: 'M',
+    to: '/platform-admin/manager-assignments',
+  },
+  {
     label: 'Bookings',
     symbol: 'B',
     to: null,
