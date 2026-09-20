@@ -1,5 +1,10 @@
 import RestaurantDetails from './pages/RestaurantDetails'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+} from 'react-router-dom'
 
 import Home from './pages/Home'
 import Restaurants from './pages/Restaurants'
@@ -15,6 +20,9 @@ import AdminManagerAssignments from './pages/admin/AdminManagerAssignments'
 import AdminRestaurants from './pages/admin/AdminRestaurants'
 import AdminUsers from './pages/admin/AdminUsers'
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
+import ManagerDashboard from './pages/manager/ManagerDashboard'
+import ManagerLogin from './pages/manager/ManagerLogin'
+import ProtectedManagerRoute from './components/manager/ProtectedManagerRoute'
 
 
 function App() {
@@ -112,6 +120,25 @@ function App() {
             <ProtectedAdminRoute>
               <AdminBookings />
             </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/manager/login"
+          element={<ManagerLogin />}
+        />
+
+        <Route
+          path="/manager"
+          element={<Navigate to="/manager/dashboard" replace />}
+        />
+
+        <Route
+          path="/manager/dashboard"
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerDashboard />
+            </ProtectedManagerRoute>
           )}
         />
 

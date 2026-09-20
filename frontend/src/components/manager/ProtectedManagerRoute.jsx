@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 
 import {
-  ADMIN_AUTH_EXPIRED_EVENT,
-  getPlatformAdminProfile,
-} from '../../api/adminApi'
+  getRestaurantManagerProfile,
+  MANAGER_AUTH_EXPIRED_EVENT,
+} from '../../api/managerApi'
 
 
-function ProtectedAdminRoute({ children }) {
+function ProtectedManagerRoute({ children }) {
   const [accessState, setAccessState] = useState({
     isChecking: true,
     isAuthorized: false,
@@ -17,22 +17,28 @@ function ProtectedAdminRoute({ children }) {
   useEffect(() => {
     let isCancelled = false
 
-    function handleAuthenticationExpiry() {
+    function denyAccess(message) {
       if (!isCancelled) {
         setAccessState({
           isChecking: false,
           isAuthorized: false,
-          message: 'Your Admin session has expired. Please sign in again.',
+          message,
         })
       }
     }
 
+    function handleAuthenticationExpiry() {
+      denyAccess(
+        'Your Manager session has expired. Please sign in again.',
+      )
+    }
+
     window.addEventListener(
-      ADMIN_AUTH_EXPIRED_EVENT,
+      MANAGER_AUTH_EXPIRED_EVENT,
       handleAuthenticationExpiry,
     )
 
-    getPlatformAdminProfile()
+    getRestaurantManagerProfile()
       .then(() => {
         if (!isCancelled) {
           setAccessState({
@@ -43,21 +49,17 @@ function ProtectedAdminRoute({ children }) {
         }
       })
       .catch((error) => {
-        if (!isCancelled) {
-          setAccessState({
-            isChecking: false,
-            isAuthorized: false,
-            message: error.code === 'AUTH_EXPIRED'
-              ? 'Your Admin session has expired. Please sign in again.'
-              : error.message,
-          })
-        }
+        denyAccess(
+          error.code === 'AUTH_EXPIRED'
+            ? 'Your Manager session has expired. Please sign in again.'
+            : error.message,
+        )
       })
 
     return () => {
       isCancelled = true
       window.removeEventListener(
-        ADMIN_AUTH_EXPIRED_EVENT,
+        MANAGER_AUTH_EXPIRED_EVENT,
         handleAuthenticationExpiry,
       )
     }
@@ -69,7 +71,7 @@ function ProtectedAdminRoute({ children }) {
         <div className="rounded-2xl bg-white px-8 py-7 text-center shadow-sm">
           <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-orange-100 border-t-orange-500" />
           <p className="mt-4 text-sm font-medium text-slate-600">
-            Verifying Platform Admin access...
+            Verifying Restaurant Manager access...
           </p>
         </div>
       </main>
@@ -79,7 +81,7 @@ function ProtectedAdminRoute({ children }) {
   if (!accessState.isAuthorized) {
     return (
       <Navigate
-        to="/platform-admin/login"
+        to="/manager/login"
         replace
         state={{ message: accessState.message }}
       />
@@ -90,4 +92,4 @@ function ProtectedAdminRoute({ children }) {
 }
 
 
-export default ProtectedAdminRoute
+export default ProtectedManagerRoute
