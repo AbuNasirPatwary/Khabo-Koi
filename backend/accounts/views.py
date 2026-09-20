@@ -4,9 +4,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import UserProfile
+from .models import (
+    RestaurantManagerAssignment,
+    UserProfile,
+)
 from .permissions import IsPlatformAdmin
 from .serializers import (
+    PlatformAdminRoleUpdateSerializer,
+    PlatformAdminUserSerializer,
+    ProfileSerializer,
+    RegisterSerializer,
+)
+
+from .serializers import (
+    PlatformAdminManagerAssignmentCreateSerializer,
+    PlatformAdminManagerAssignmentSerializer,
+    PlatformAdminManagerAssignmentStatusSerializer,
     PlatformAdminRoleUpdateSerializer,
     PlatformAdminUserSerializer,
     ProfileSerializer,
@@ -147,3 +160,87 @@ class PlatformAdminRoleUpdateView(generics.UpdateAPIView):
 
     lookup_field = "user_id"
     lookup_url_kwarg = "user_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENT LIST AND CREATE
+# =============================================================================
+# GET  /api/accounts/admin/manager-assignments/
+# POST /api/accounts/admin/manager-assignments/
+#
+# GET returns the complete assignment history, including inactive records.
+# POST creates a new relationship between a Restaurant Manager and restaurant.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentListCreateView(
+    generics.ListCreateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    def get_queryset(self):
+
+        return (
+            RestaurantManagerAssignment.objects
+            .select_related(
+                "user",
+                "user__profile",
+                "restaurant",
+                "assigned_by",
+            )
+            .order_by(
+                "-assigned_at",
+            )
+        )
+
+    def get_serializer_class(self):
+
+        if self.request.method == "POST":
+            return (
+                PlatformAdminManagerAssignmentCreateSerializer
+            )
+
+        return PlatformAdminManagerAssignmentSerializer
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENT STATUS
+# =============================================================================
+# PATCH /api/accounts/admin/manager-assignments/<assignment_id>/
+#
+# Assignments are activated or deactivated instead of deleted. This preserves
+# their history and prevents accidental destructive operations.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentStatusView(
+    generics.UpdateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminManagerAssignmentStatusSerializer
+    )
+
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        RestaurantManagerAssignment.objects
+        .select_related(
+            "user",
+            "user__profile",
+            "restaurant",
+        )
+    )
+
+    lookup_field = "id"
+    lookup_url_kwarg = "assignment_id"

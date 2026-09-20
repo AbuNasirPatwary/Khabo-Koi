@@ -5,12 +5,13 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import (
+    PlatformAdminManagerAssignmentListCreateView,
+    PlatformAdminManagerAssignmentStatusView,
     PlatformAdminRoleUpdateView,
     PlatformAdminUserListView,
     ProfileView,
     RegisterView,
 )
-
 
 urlpatterns = [
 
@@ -54,6 +55,20 @@ urlpatterns = [
         "admin/users/<int:user_id>/role/",
         PlatformAdminRoleUpdateView.as_view(),
         name="platform_admin_role_update",
+    ),
+
+    # Platform Admin-only Manager assignment overview and creation.
+    path(
+        "admin/manager-assignments/",
+        PlatformAdminManagerAssignmentListCreateView.as_view(),
+        name="platform_admin_manager_assignment_list_create",
+    ),
+
+    # Platform Admin-only assignment activation and deactivation.
+    path(
+        "admin/manager-assignments/<int:assignment_id>/",
+        PlatformAdminManagerAssignmentStatusView.as_view(),
+        name="platform_admin_manager_assignment_status",
     ),
 
 ]

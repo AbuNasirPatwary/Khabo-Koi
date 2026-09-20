@@ -2,7 +2,12 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import UserProfile
+from restaurants.models import Restaurant
+
+from .models import (
+    RestaurantManagerAssignment,
+    UserProfile,
+)
 
 
 # =============================================================================
@@ -242,3 +247,162 @@ class PlatformAdminRoleUpdateSerializer(serializers.ModelSerializer):
             )
 
         return profile
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENTS
+# =============================================================================
+# These serializers let Platform Admins view, create and activate/deactivate
+# the relationship between a Restaurant Manager and a restaurant.
+#
+# Assignment records are deactivated instead of deleted so the project retains
+# its management history.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentSerializer(
+    serializers.ModelSerializer
+):
+
+    user = serializers.SerializerMethodField()
+    restaurant = serializers.SerializerMethodField()
+    assigned_by = serializers.SerializerMethodField()
+
+    class Meta:
+
+        model = RestaurantManagerAssignment
+
+        fields = [
+            "id",
+            "user",
+            "restaurant",
+            "is_active",
+            "assigned_at",
+            "assigned_by",
+        ]
+
+        read_only_fields = fields
+
+    def get_user(self, assignment):
+
+        return {
+            "id": assignment.user_id,
+            "username": assignment.user.username,
+            "email": assignment.user.email,
+            "role": assignment.user.profile.role,
+        }
+
+    def get_restaurant(self, assignment):
+
+        return {
+            "id": assignment.restaurant_id,
+            "name": assignment.restaurant.name,
+        }
+
+    def get_assigned_by(self, assignment):
+
+        if assignment.assigned_by is None:
+            return None
+
+        return {
+            "id": assignment.assigned_by_id,
+            "username": assignment.assigned_by.username,
+        }
+
+
+class PlatformAdminManagerAssignmentCreateSerializer(
+    serializers.Serializer
+):
+
+    user_id = serializers.PrimaryKeyRelatedField(
+        source="user",
+        queryset=User.objects.select_related(
+            "profile"
+        ),
+    )
+
+    restaurant_id = serializers.PrimaryKeyRelatedField(
+        source="restaurant",
+        queryset=Restaurant.objects.all(),
+    )
+
+    def validate_user_id(self, user):
+
+        # A suspended account must not receive restaurant access.
+        if not user.is_active:
+            raise serializers.ValidationError(
+                "The selected user account is inactive."
+            )
+
+        if (
+            user.profile.role
+            != UserProfile.Role.RESTAURANT_MANAGER
+        ):
+            raise serializers.ValidationError(
+                "The selected user must have the Restaurant Manager role."
+            )
+
+        return user
+
+    def validate(self, attributes):
+
+        user = attributes["user"]
+        restaurant = attributes["restaurant"]
+
+        # The database also enforces this pair as unique. Performing the check
+        # here provides a clear API error instead of a database exception.
+        if RestaurantManagerAssignment.objects.filter(
+            user=user,
+            restaurant=restaurant,
+        ).exists():
+            raise serializers.ValidationError(
+                "This Manager assignment already exists. "
+                "Update the existing assignment instead."
+            )
+
+        return attributes
+
+    def create(self, validated_data):
+
+        request = self.context["request"]
+
+        return RestaurantManagerAssignment.objects.create(
+            **validated_data,
+            assigned_by=request.user,
+        )
+
+
+class PlatformAdminManagerAssignmentStatusSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = RestaurantManagerAssignment
+
+        fields = [
+            "is_active",
+        ]
+
+    def validate_is_active(self, is_active):
+
+        # Deactivation is always permitted. Reactivation requires the assigned
+        # user to remain an active Restaurant Manager.
+        if not is_active:
+            return is_active
+
+        manager = self.instance.user
+
+        if not manager.is_active:
+            raise serializers.ValidationError(
+                "An inactive user cannot receive restaurant access."
+            )
+
+        if (
+            manager.profile.role
+            != UserProfile.Role.RESTAURANT_MANAGER
+        ):
+            raise serializers.ValidationError(
+                "Only a Restaurant Manager assignment can be activated."
+            )
+
+        return is_active

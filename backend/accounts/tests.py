@@ -1315,3 +1315,518 @@ class PlatformAdminRoleUpdateAPITests(APITestCase):
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENT API TESTS
+# =============================================================================
+# These tests verify the full assignment lifecycle:
+#
+# - Platform Admins can inspect historical assignments.
+# - Only active Restaurant Managers can receive new access.
+# - Duplicate relationships are rejected clearly.
+# - Existing records are activated or deactivated rather than deleted.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.list_create_url = reverse(
+            "platform_admin_manager_assignment_list_create"
+        )
+
+        self.platform_admin = User.objects.create_user(
+            username="assignment-admin",
+            email="assignment-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        self.manager = User.objects.create_user(
+            username="assignment-manager",
+            email="assignment-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.customer = User.objects.create_user(
+            username="assignment-customer",
+            email="assignment-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.inactive_manager = User.objects.create_user(
+            username="inactive-assignment-manager",
+            email="inactive-assignment-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.inactive_manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.inactive_manager.profile.save()
+
+        self.inactive_manager.is_active = False
+        self.inactive_manager.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.restaurant_one = Restaurant.objects.create(
+            name="Assignment Restaurant One",
+            cuisine="Test Cuisine",
+        )
+
+        self.restaurant_two = Restaurant.objects.create(
+            name="Assignment Restaurant Two",
+            cuisine="Test Cuisine",
+        )
+
+        self.assignment = (
+            RestaurantManagerAssignment.objects.create(
+                user=self.manager,
+                restaurant=self.restaurant_one,
+                assigned_by=self.platform_admin,
+                is_active=True,
+            )
+        )
+
+    def authenticate(self, user):
+
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def status_url(self, assignment):
+
+        return reverse(
+            "platform_admin_manager_assignment_status",
+            kwargs={
+                "assignment_id": assignment.id,
+            },
+        )
+
+    def test_anonymous_user_cannot_list_assignments(self):
+
+        response = self.client.get(
+            self.list_create_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_cannot_list_assignments(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.get(
+            self.list_create_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_platform_admin_can_list_active_and_inactive_assignments(self):
+
+        inactive_assignment = (
+            RestaurantManagerAssignment.objects.create(
+                user=self.manager,
+                restaurant=self.restaurant_two,
+                assigned_by=None,
+                is_active=False,
+            )
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.get(
+            self.list_create_url
+        )
+
+        assignments_by_id = {
+            assignment_data["id"]: assignment_data
+            for assignment_data in response.data
+        }
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            set(assignments_by_id),
+            {
+                self.assignment.id,
+                inactive_assignment.id,
+            },
+        )
+
+        active_data = assignments_by_id[
+            self.assignment.id
+        ]
+
+        self.assertEqual(
+            active_data["user"]["id"],
+            self.manager.id,
+        )
+
+        self.assertEqual(
+            active_data["restaurant"]["id"],
+            self.restaurant_one.id,
+        )
+
+        self.assertEqual(
+            active_data["assigned_by"]["id"],
+            self.platform_admin.id,
+        )
+
+        self.assertFalse(
+            assignments_by_id[
+                inactive_assignment.id
+            ]["is_active"]
+        )
+
+    def test_platform_admin_can_create_manager_assignment(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.manager.id,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        assignment = RestaurantManagerAssignment.objects.get(
+            user=self.manager,
+            restaurant=self.restaurant_two,
+        )
+
+        self.assertTrue(
+            assignment.is_active
+        )
+
+        self.assertEqual(
+            assignment.assigned_by,
+            self.platform_admin,
+        )
+
+    def test_customer_cannot_create_manager_assignment(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.manager.id,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_customer_cannot_be_assigned_as_manager(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.customer.id,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            RestaurantManagerAssignment.objects.filter(
+                user=self.customer,
+            ).exists()
+        )
+
+    def test_inactive_manager_cannot_receive_assignment(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.inactive_manager.id,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_duplicate_assignment_is_rejected(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.manager.id,
+                "restaurant_id": self.restaurant_one.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            RestaurantManagerAssignment.objects.filter(
+                user=self.manager,
+                restaurant=self.restaurant_one,
+            ).count(),
+            1,
+        )
+
+    def test_invalid_user_id_is_rejected(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": 999999,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_platform_admin_can_deactivate_assignment(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertFalse(
+            self.assignment.is_active
+        )
+
+        # Deactivation preserves the historical assignment record.
+        self.assertTrue(
+            RestaurantManagerAssignment.objects.filter(
+                id=self.assignment.id,
+            ).exists()
+        )
+
+    def test_platform_admin_can_reactivate_valid_assignment(self):
+
+        self.assignment.is_active = False
+        self.assignment.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertTrue(
+            self.assignment.is_active
+        )
+
+    def test_demoted_manager_assignment_cannot_be_reactivated(self):
+
+        self.assignment.is_active = False
+        self.assignment.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.CUSTOMER
+        )
+
+        self.manager.profile.save()
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            self.assignment.is_active
+        )
+
+    def test_customer_cannot_change_assignment_status(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_assignment_status_endpoint_rejects_put(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.put(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_missing_assignment_returns_not_found(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        missing_assignment_url = reverse(
+            "platform_admin_manager_assignment_status",
+            kwargs={
+                "assignment_id": 999999,
+            },
+        )
+
+        response = self.client.patch(
+            missing_assignment_url,
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
