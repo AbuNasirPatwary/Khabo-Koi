@@ -4,8 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .models import UserProfile
 from .permissions import IsPlatformAdmin
 from .serializers import (
+    PlatformAdminRoleUpdateSerializer,
     PlatformAdminUserSerializer,
     ProfileSerializer,
     RegisterSerializer,
@@ -107,3 +109,41 @@ class PlatformAdminUserListView(generics.ListAPIView):
                 "username",
             )
         )
+
+
+# =============================================================================
+# PLATFORM ADMIN ROLE UPDATE
+# =============================================================================
+# PATCH /api/accounts/admin/users/<user_id>/role/
+#
+# The URL identifies a Django User, while the endpoint updates that user's
+# related UserProfile because Khabo-Koi roles live on the profile model.
+# =============================================================================
+
+class PlatformAdminRoleUpdateView(generics.UpdateAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminRoleUpdateSerializer
+    )
+
+    # This endpoint supports partial updates only. A role change should be an
+    # explicit PATCH operation rather than replacing the entire profile.
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        UserProfile.objects
+        .select_related(
+            "user",
+        )
+    )
+
+    lookup_field = "user_id"
+    lookup_url_kwarg = "user_id"

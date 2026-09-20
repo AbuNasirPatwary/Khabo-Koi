@@ -1008,3 +1008,310 @@ class PlatformAdminUserListAPITests(APITestCase):
                 "is_superuser",
                 user_data,
             )
+
+
+# =============================================================================
+# PLATFORM ADMIN ROLE UPDATE API TESTS
+# =============================================================================
+# Role changes alter authorization, so this endpoint receives stricter tests
+# than an ordinary profile-editing endpoint.
+#
+# The tests prove that only a Platform Admin may change another user's role,
+# invalid roles are rejected, self-demotion is blocked, and Manager access is
+# removed safely when a Manager is changed to another role.
+# =============================================================================
+
+class PlatformAdminRoleUpdateAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.customer = User.objects.create_user(
+            username="role-customer",
+            email="role-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="role-manager",
+            email="role-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.platform_admin = User.objects.create_user(
+            username="role-admin",
+            email="role-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        self.restaurant = Restaurant.objects.create(
+            name="Role Test Restaurant",
+            cuisine="Test Cuisine",
+        )
+
+    def role_url(self, user):
+
+        return reverse(
+            "platform_admin_role_update",
+            kwargs={
+                "user_id": user.id,
+            },
+        )
+
+    def authenticate(self, user):
+
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def test_anonymous_user_cannot_change_role(self):
+
+        response = self.client.patch(
+            self.role_url(
+                self.customer
+            ),
+            {
+                "role": UserProfile.Role.RESTAURANT_MANAGER,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_cannot_change_role(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.manager
+            ),
+            {
+                "role": UserProfile.Role.CUSTOMER,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_restaurant_manager_cannot_change_role(self):
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.customer
+            ),
+            {
+                "role": UserProfile.Role.RESTAURANT_MANAGER,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_platform_admin_can_promote_customer_to_manager(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.customer
+            ),
+            {
+                "role": UserProfile.Role.RESTAURANT_MANAGER,
+            },
+            format="json",
+        )
+
+        self.customer.profile.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            self.customer.profile.role,
+            UserProfile.Role.RESTAURANT_MANAGER,
+        )
+
+        self.assertEqual(
+            response.data["role"],
+            UserProfile.Role.RESTAURANT_MANAGER,
+        )
+
+        # A Manager role alone grants no restaurant access. The Platform Admin
+        # must create a restaurant assignment in a separate operation.
+        self.assertFalse(
+            self.customer.restaurant_assignments.exists()
+        )
+
+    def test_invalid_role_is_rejected_without_changing_profile(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.customer
+            ),
+            {
+                "role": "NOT_A_REAL_ROLE",
+            },
+            format="json",
+        )
+
+        self.customer.profile.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            self.customer.profile.role,
+            UserProfile.Role.CUSTOMER,
+        )
+
+    def test_platform_admin_cannot_change_own_role(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.platform_admin
+            ),
+            {
+                "role": UserProfile.Role.CUSTOMER,
+            },
+            format="json",
+        )
+
+        self.platform_admin.profile.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            self.platform_admin.profile.role,
+            UserProfile.Role.ADMIN,
+        )
+
+    def test_demoting_manager_deactivates_restaurant_assignments(self):
+
+        assignment = RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            assigned_by=self.platform_admin,
+            is_active=True,
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.manager
+            ),
+            {
+                "role": UserProfile.Role.CUSTOMER,
+            },
+            format="json",
+        )
+
+        self.manager.profile.refresh_from_db()
+        assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            self.manager.profile.role,
+            UserProfile.Role.CUSTOMER,
+        )
+
+        self.assertFalse(
+            assignment.is_active
+        )
+
+    def test_role_endpoint_rejects_put_requests(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.put(
+            self.role_url(
+                self.customer
+            ),
+            {
+                "role": UserProfile.Role.RESTAURANT_MANAGER,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_missing_user_returns_not_found(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        missing_user_url = reverse(
+            "platform_admin_role_update",
+            kwargs={
+                "user_id": 999999,
+            },
+        )
+
+        response = self.client.patch(
+            missing_user_url,
+            {
+                "role": UserProfile.Role.CUSTOMER,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )

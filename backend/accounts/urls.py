@@ -5,6 +5,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import (
+    PlatformAdminRoleUpdateView,
     PlatformAdminUserListView,
     ProfileView,
     RegisterView,
@@ -46,6 +47,13 @@ urlpatterns = [
         "admin/users/",
         PlatformAdminUserListView.as_view(),
         name="platform_admin_user_list",
+    ),
+
+    # Platform Admin-only product-role modification.
+    path(
+        "admin/users/<int:user_id>/role/",
+        PlatformAdminRoleUpdateView.as_view(),
+        name="platform_admin_role_update",
     ),
 
 ]

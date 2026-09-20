@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db import transaction
 from rest_framework import serializers
 
 from .models import UserProfile
@@ -174,3 +175,70 @@ class PlatformAdminUserSerializer(serializers.ModelSerializer):
             return None
 
         return profile.role
+
+
+# =============================================================================
+# PLATFORM ADMIN ROLE UPDATE
+# =============================================================================
+# A Platform Admin can deliberately change another user's Khabo-Koi product
+# role. This serializer updates UserProfile rather than Django's User model
+# because product roles are separate from is_staff and is_superuser.
+# =============================================================================
+
+class PlatformAdminRoleUpdateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+
+        model = UserProfile
+
+        fields = [
+            "role",
+        ]
+
+    def validate_role(self, role):
+
+        request = self.context.get(
+            "request"
+        )
+
+        # Prevent an Admin from accidentally removing their own Admin access
+        # and locking themselves out of the Platform Admin interface.
+        if (
+            request is not None
+            and self.instance.user_id
+            == request.user.id
+        ):
+            raise serializers.ValidationError(
+                "You cannot change your own Platform Admin role."
+            )
+
+        return role
+
+    @transaction.atomic
+    def update(self, profile, validated_data):
+
+        previous_role = profile.role
+        new_role = validated_data["role"]
+
+        profile.role = new_role
+        profile.save(
+            update_fields=[
+                "role",
+                "updated_at",
+            ]
+        )
+
+        # Assignments should not silently become usable again after a Manager
+        # is demoted and later promoted. Deactivation preserves the history
+        # while requiring a Platform Admin to grant access again deliberately.
+        if (
+            previous_role
+            == UserProfile.Role.RESTAURANT_MANAGER
+            and new_role
+            != UserProfile.Role.RESTAURANT_MANAGER
+        ):
+            profile.user.restaurant_assignments.update(
+                is_active=False
+            )
+
+        return profile
