@@ -1,3 +1,6 @@
+import { Link } from 'react-router-dom'
+
+
 function Footer() {
     return (
         <footer className="bg-[#1c1c1e] text-white">
@@ -138,12 +141,12 @@ function Footer() {
                             © 2026 Khabo-Koi. All rights reserved.
                         </span>
 
-                        <button
-                            type="button"
-                            className="text-white/30"
+                        <Link
+                            to="/platform-admin/login"
+                            className="text-white/30 transition hover:text-white/60"
                         >
                             Admin Portal
-                        </button>
+                        </Link>
 
                     </div>
 

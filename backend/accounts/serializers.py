@@ -1,5 +1,7 @@
 from django.contrib.auth.models import User
-from django.db import transaction
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from restaurants.models import Restaurant
@@ -35,6 +37,28 @@ class RegisterSerializer(serializers.ModelSerializer):
             "email",
             "password",
         ]
+
+    def validate(self, attributes):
+
+        # create_user hashes a password but does not run the configured
+        # strength validators. Validate here so API registrations follow the
+        # same password policy as Django's standard account forms.
+        candidate_user = User(
+            username=attributes.get("username", ""),
+            email=attributes.get("email", ""),
+        )
+
+        try:
+            validate_password(
+                attributes["password"],
+                user=candidate_user,
+            )
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({
+                "password": error.messages,
+            }) from error
+
+        return attributes
 
     def create(self, validated_data):
 
@@ -117,6 +141,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             user.restaurant_assignments
             .filter(
                 is_active=True,
+                restaurant__is_active=True,
             )
             .select_related(
                 "restaurant",
@@ -219,8 +244,27 @@ class PlatformAdminRoleUpdateSerializer(serializers.ModelSerializer):
 
         return role
 
+    def validate(self, attributes):
+
+        if "role" not in attributes:
+            raise serializers.ValidationError({
+                "role": "This field is required.",
+            })
+
+        return attributes
+
     @transaction.atomic
     def update(self, profile, validated_data):
+
+        # Serialize role changes with assignment creation/reactivation for the
+        # same user so concurrent requests cannot revive stale access.
+        User.objects.select_for_update().get(
+            id=profile.user_id,
+        )
+
+        profile = UserProfile.objects.select_for_update().get(
+            id=profile.id,
+        )
 
         previous_role = profile.role
         new_role = validated_data["role"]
@@ -296,6 +340,7 @@ class PlatformAdminManagerAssignmentSerializer(
         return {
             "id": assignment.restaurant_id,
             "name": assignment.restaurant.name,
+            "is_active": assignment.restaurant.is_active,
         }
 
     def get_assigned_by(self, assignment):
@@ -343,6 +388,15 @@ class PlatformAdminManagerAssignmentCreateSerializer(
 
         return user
 
+    def validate_restaurant_id(self, restaurant):
+
+        if not restaurant.is_active:
+            raise serializers.ValidationError(
+                "An inactive restaurant cannot receive Manager access."
+            )
+
+        return restaurant
+
     def validate(self, attributes):
 
         user = attributes["user"]
@@ -361,14 +415,51 @@ class PlatformAdminManagerAssignmentCreateSerializer(
 
         return attributes
 
+    @transaction.atomic
     def create(self, validated_data):
 
         request = self.context["request"]
 
-        return RestaurantManagerAssignment.objects.create(
-            **validated_data,
-            assigned_by=request.user,
+        user = (
+            User.objects
+            .select_for_update()
+            .get(id=validated_data["user"].id)
         )
+
+        restaurant = (
+            Restaurant.objects
+            .select_for_update()
+            .get(id=validated_data["restaurant"].id)
+        )
+
+        # Repeat authorization checks after locking because the role, account,
+        # or restaurant may have changed after initial validation.
+        self.validate_user_id(user)
+        self.validate_restaurant_id(restaurant)
+
+        if RestaurantManagerAssignment.objects.filter(
+            user=user,
+            restaurant=restaurant,
+        ).exists():
+            raise serializers.ValidationError(
+                "This Manager assignment already exists. "
+                "Update the existing assignment instead."
+            )
+
+        try:
+            # The inner savepoint lets us translate a database uniqueness
+            # race into a clean API error without breaking the outer lock.
+            with transaction.atomic():
+                return RestaurantManagerAssignment.objects.create(
+                    user=user,
+                    restaurant=restaurant,
+                    assigned_by=request.user,
+                )
+        except IntegrityError as error:
+            raise serializers.ValidationError(
+                "This Manager assignment already exists. "
+                "Update the existing assignment instead."
+            ) from error
 
 
 class PlatformAdminManagerAssignmentStatusSerializer(
@@ -405,7 +496,72 @@ class PlatformAdminManagerAssignmentStatusSerializer(
                 "Only a Restaurant Manager assignment can be activated."
             )
 
+        if not self.instance.restaurant.is_active:
+            raise serializers.ValidationError(
+                "Manager access cannot be activated for an inactive restaurant."
+            )
+
         return is_active
+
+    def validate(self, attributes):
+
+        if "is_active" not in attributes:
+            raise serializers.ValidationError({
+                "is_active": "This field is required.",
+            })
+
+        return attributes
+
+    @transaction.atomic
+    def update(self, assignment, validated_data):
+
+        manager = (
+            User.objects
+            .select_for_update()
+            .get(id=assignment.user_id)
+        )
+
+        restaurant = (
+            Restaurant.objects
+            .select_for_update()
+            .get(id=assignment.restaurant_id)
+        )
+
+        assignment = (
+            RestaurantManagerAssignment.objects
+            .select_for_update()
+            .get(id=assignment.id)
+        )
+
+        is_active = validated_data["is_active"]
+
+        if is_active:
+            if not manager.is_active:
+                raise serializers.ValidationError({
+                    "is_active": "An inactive user cannot receive restaurant access.",
+                })
+
+            if (
+                manager.profile.role
+                != UserProfile.Role.RESTAURANT_MANAGER
+            ):
+                raise serializers.ValidationError({
+                    "is_active": "Only a Restaurant Manager assignment can be activated.",
+                })
+
+            if not restaurant.is_active:
+                raise serializers.ValidationError({
+                    "is_active": "Manager access cannot be activated for an inactive restaurant.",
+                })
+
+        assignment.is_active = is_active
+        assignment.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        return assignment
 
 
 # =============================================================================
@@ -450,8 +606,21 @@ class PlatformAdminAccountStatusSerializer(
 
         return is_active
 
+    def validate(self, attributes):
+
+        if "is_active" not in attributes:
+            raise serializers.ValidationError({
+                "is_active": "This field is required.",
+            })
+
+        return attributes
+
     @transaction.atomic
     def update(self, user, validated_data):
+
+        user = User.objects.select_for_update().get(
+            id=user.id,
+        )
 
         is_active = validated_data["is_active"]
 

@@ -8,6 +8,13 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminBookings from './pages/admin/AdminBookings'
+import AdminLogin from './pages/admin/AdminLogin'
+import AdminManagerAssignments from './pages/admin/AdminManagerAssignments'
+import AdminRestaurants from './pages/admin/AdminRestaurants'
+import AdminUsers from './pages/admin/AdminUsers'
+import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
 
 
 function App() {
@@ -56,6 +63,56 @@ function App() {
         <Route
           path="/profile"
           element={<Profile />}
+        />
+
+        <Route
+          path="/platform-admin/login"
+          element={<AdminLogin />}
+        />
+
+        <Route
+          path="/platform-admin/dashboard"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminDashboard />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/users"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminUsers />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/restaurants"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminRestaurants />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/manager-assignments"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminManagerAssignments />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/bookings"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminBookings />
+            </ProtectedAdminRoute>
+          )}
         />
 
       </Routes>
