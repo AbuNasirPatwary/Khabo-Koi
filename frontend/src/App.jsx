@@ -8,6 +8,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminLogin from './pages/admin/AdminLogin'
+import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
 
 
 function App() {
@@ -56,6 +59,20 @@ function App() {
         <Route
           path="/profile"
           element={<Profile />}
+        />
+
+        <Route
+          path="/platform-admin/login"
+          element={<AdminLogin />}
+        />
+
+        <Route
+          path="/platform-admin/dashboard"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminDashboard />
+            </ProtectedAdminRoute>
+          )}
         />
 
       </Routes>
