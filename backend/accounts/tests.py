@@ -33,6 +33,78 @@ User = get_user_model()
 
 
 # =============================================================================
+# PUBLIC REGISTRATION TESTS
+# =============================================================================
+# Registration must create only normal Customer accounts and must enforce the
+# password policy configured in Django settings.
+# =============================================================================
+
+class RegistrationAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.register_url = reverse("register")
+
+    def test_registration_rejects_weak_password(self):
+
+        response = self.client.post(
+            self.register_url,
+            {
+                "username": "weak-password-user",
+                "email": "weak@example.com",
+                "password": "password",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "password",
+            response.data,
+        )
+
+        self.assertFalse(
+            User.objects.filter(
+                username="weak-password-user",
+            ).exists()
+        )
+
+    def test_registration_creates_hashed_customer_account(self):
+
+        response = self.client.post(
+            self.register_url,
+            {
+                "username": "new-api-customer",
+                "email": "new-api-customer@example.com",
+                "password": "Fresh-Customer-Password-827!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        user = User.objects.get(
+            username="new-api-customer",
+        )
+
+        self.assertTrue(
+            user.check_password("Fresh-Customer-Password-827!")
+        )
+
+        self.assertEqual(
+            user.profile.role,
+            UserProfile.Role.CUSTOMER,
+        )
+
+
+# =============================================================================
 # USER PROFILE TESTS
 # =============================================================================
 # These tests verify that every new Django User receives a Khabo-Koi profile
@@ -506,6 +578,38 @@ class RolePermissionTests(TestCase):
             )
         )
 
+    def test_inactive_restaurant_does_not_grant_assignment_access(self):
+
+        self.restaurant_one.is_active = False
+        self.restaurant_one.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant_one,
+            assigned_by=self.platform_admin,
+            is_active=True,
+        )
+
+        request = self.create_request(
+            self.manager
+        )
+
+        self.assertFalse(
+            HasActiveRestaurantAssignment().has_permission(
+                request,
+                view=None,
+            )
+        )
+
+        self.assertEqual(
+            list(get_managed_restaurant_ids(self.manager)),
+            [],
+        )
+
     def test_managed_restaurant_ids_include_only_active_assignments(self):
 
         RestaurantManagerAssignment.objects.create(
@@ -601,6 +705,7 @@ class ProfileAPITests(APITestCase):
         self.inactive_restaurant = Restaurant.objects.create(
             name="Inactive Restaurant",
             cuisine="Test Cuisine",
+            is_active=False,
         )
 
     def authenticate(self, user):
@@ -668,7 +773,7 @@ class ProfileAPITests(APITestCase):
             user=self.manager,
             restaurant=self.inactive_restaurant,
             assigned_by=self.platform_admin,
-            is_active=False,
+            is_active=True,
         )
 
         self.authenticate(
@@ -1297,6 +1402,25 @@ class PlatformAdminRoleUpdateAPITests(APITestCase):
             status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
+    def test_role_endpoint_rejects_empty_patch(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.role_url(
+                self.customer
+            ),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     def test_missing_user_returns_not_found(self):
 
         self.authenticate(
@@ -1503,6 +1627,10 @@ class PlatformAdminManagerAssignmentAPITests(APITestCase):
             self.restaurant_one.id,
         )
 
+        self.assertTrue(
+            active_data["restaurant"]["is_active"]
+        )
+
         self.assertEqual(
             active_data["assigned_by"]["id"],
             self.platform_admin.id,
@@ -1546,6 +1674,40 @@ class PlatformAdminManagerAssignmentAPITests(APITestCase):
         self.assertEqual(
             assignment.assigned_by,
             self.platform_admin,
+        )
+
+    def test_inactive_restaurant_cannot_receive_manager_assignment(self):
+
+        self.restaurant_two.is_active = False
+        self.restaurant_two.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.post(
+            self.list_create_url,
+            {
+                "user_id": self.manager.id,
+                "restaurant_id": self.restaurant_two.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            RestaurantManagerAssignment.objects.filter(
+                user=self.manager,
+                restaurant=self.restaurant_two,
+            ).exists()
         )
 
     def test_customer_cannot_create_manager_assignment(self):
@@ -1770,6 +1932,47 @@ class PlatformAdminManagerAssignmentAPITests(APITestCase):
             self.assignment.is_active
         )
 
+    def test_inactive_restaurant_assignment_cannot_be_reactivated(self):
+
+        self.assignment.is_active = False
+        self.assignment.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.restaurant_one.is_active = False
+        self.restaurant_one.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            self.assignment.is_active
+        )
+
     def test_customer_cannot_change_assignment_status(self):
 
         self.authenticate(
@@ -1810,6 +2013,25 @@ class PlatformAdminManagerAssignmentAPITests(APITestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_assignment_status_endpoint_rejects_empty_patch(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.assignment
+            ),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
         )
 
     def test_missing_assignment_returns_not_found(self):
@@ -2121,6 +2343,25 @@ class PlatformAdminAccountStatusAPITests(APITestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_account_status_endpoint_rejects_empty_patch(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.customer
+            ),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
         )
 
     def test_missing_user_returns_not_found(self):

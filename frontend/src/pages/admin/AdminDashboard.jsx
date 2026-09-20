@@ -58,6 +58,7 @@ function AdminDashboard() {
   const [profile, setProfile] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const hasInitialLoadError = Boolean(errorMessage && !dashboardData)
 
   async function handleRefresh() {
     setIsLoading(true)
@@ -181,7 +182,9 @@ function AdminDashboard() {
                   <p className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
                     {isLoading
                       ? '—'
-                      : (dashboardData?.[metric.key] ?? 0).toLocaleString()}
+                      : hasInitialLoadError
+                        ? 'Unavailable'
+                        : dashboardData[metric.key].toLocaleString()}
                   </p>
                 </div>
 

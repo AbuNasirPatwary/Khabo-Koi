@@ -272,6 +272,21 @@ class PlatformAdminRestaurantAPITests(APITestCase):
 
         self.assertTrue(self.active_restaurant.is_active)
 
+    def test_restaurant_status_endpoint_rejects_empty_patch(self):
+
+        self.authenticate(self.platform_admin)
+
+        response = self.client.patch(
+            self.status_url(self.active_restaurant),
+            {},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
 
 # =============================================================================
 # PLATFORM ADMIN BOOKING OVERSIGHT API TESTS

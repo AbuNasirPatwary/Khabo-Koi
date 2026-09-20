@@ -5,6 +5,7 @@ import {
   getPlatformAdminRestaurants,
   updatePlatformAdminRestaurantStatus,
 } from '../../api/adminApi'
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
 
 
@@ -18,6 +19,7 @@ function AdminRestaurants() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingRestaurant, setPendingRestaurant] = useState(null)
+  const hasInitialLoadError = Boolean(errorMessage && restaurants.length === 0)
 
   async function loadRestaurants({ showLoader = true } = {}) {
     if (showLoader) {
@@ -180,7 +182,7 @@ function AdminRestaurants() {
                 Live
               </span>
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                {isLoading ? '—' : value}
+                {isLoading ? '—' : hasInitialLoadError ? 'Unavailable' : value}
               </p>
               <p className="mt-1 text-sm text-slate-500">{label}</p>
             </article>
@@ -189,7 +191,7 @@ function AdminRestaurants() {
 
         {(errorMessage || successMessage) && (
           <div
-            role="status"
+            role={errorMessage ? 'alert' : 'status'}
             className={`mt-6 rounded-xl border px-4 py-3 text-sm ${errorMessage
               ? 'border-red-200 bg-red-50 text-red-700'
               : 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -211,6 +213,7 @@ function AdminRestaurants() {
               />
             </label>
             <select
+              aria-label="Filter restaurants by status"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
@@ -228,10 +231,14 @@ function AdminRestaurants() {
           ) : filteredRestaurants.length === 0 ? (
             <div className="p-12 text-center">
               <p className="font-semibold text-slate-800">
-                No restaurants match these filters
+                {hasInitialLoadError
+                  ? 'Restaurant data is unavailable'
+                  : 'No restaurants match these filters'}
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                Try another restaurant name, cuisine, or status.
+                {hasInitialLoadError
+                  ? 'Use Refresh restaurants to try loading the records again.'
+                  : 'Try another restaurant name, cuisine, or status.'}
               </p>
             </div>
           ) : (
@@ -302,53 +309,21 @@ function AdminRestaurants() {
       </main>
 
       {pendingRestaurant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-5 backdrop-blur-sm">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="restaurant-confirm-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-          >
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">
-              Restaurant availability
-            </p>
-            <h2
-              id="restaurant-confirm-title"
-              className="mt-3 text-xl font-bold text-slate-900"
-            >
-              {pendingRestaurant.is_active
-                ? 'Deactivate this restaurant?'
-                : 'Activate this restaurant?'}
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {pendingRestaurant.is_active
-                ? `${pendingRestaurant.name} will disappear from the public catalogue, and active Manager assignments will be disabled.`
-                : `${pendingRestaurant.name} will return to the public catalogue. Manager access must still be restored separately.`}
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPendingRestaurant(null)}
-                disabled={isSaving}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmStatusChange}
-                disabled={isSaving}
-                className="rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60"
-              >
-                {isSaving
-                  ? 'Saving...'
-                  : pendingRestaurant.is_active
-                    ? 'Deactivate'
-                    : 'Activate'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AdminConfirmDialog
+          eyebrow="Restaurant availability"
+          title={pendingRestaurant.is_active
+            ? 'Deactivate this restaurant?'
+            : 'Activate this restaurant?'}
+          description={pendingRestaurant.is_active
+            ? `${pendingRestaurant.name} will disappear from the public catalogue, and active Manager assignments will be disabled.`
+            : `${pendingRestaurant.name} will return to the public catalogue. Manager access must still be restored separately.`}
+          confirmLabel={pendingRestaurant.is_active
+            ? 'Deactivate'
+            : 'Activate'}
+          isSaving={isSaving}
+          onCancel={() => setPendingRestaurant(null)}
+          onConfirm={confirmStatusChange}
+        />
       )}
     </AdminLayout>
   )

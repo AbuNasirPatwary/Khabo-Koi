@@ -6,6 +6,7 @@ import {
   updatePlatformAdminAccountStatus,
   updatePlatformAdminUserRole,
 } from '../../api/adminApi'
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
 
 
@@ -52,6 +53,7 @@ function AdminUsers() {
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
+  const hasInitialLoadError = Boolean(errorMessage && users.length === 0)
 
   async function loadUsers() {
     setIsLoading(true)
@@ -291,7 +293,7 @@ function AdminUsers() {
                 Live
               </span>
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                {isLoading ? '—' : value}
+                {isLoading ? '—' : hasInitialLoadError ? 'Unavailable' : value}
               </p>
               <p className="mt-1 text-sm text-slate-500">
                 {label}
@@ -302,7 +304,7 @@ function AdminUsers() {
 
         {(errorMessage || successMessage) && (
           <div
-            role="status"
+            role={errorMessage ? 'alert' : 'status'}
             className={`mt-6 rounded-xl border px-4 py-3 text-sm ${errorMessage
               ? 'border-red-200 bg-red-50 text-red-700'
               : 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -325,6 +327,7 @@ function AdminUsers() {
             </label>
 
             <select
+              aria-label="Filter users by role"
               value={roleFilter}
               onChange={(event) => setRoleFilter(event.target.value)}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
@@ -341,6 +344,7 @@ function AdminUsers() {
             </select>
 
             <select
+              aria-label="Filter users by account status"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
@@ -358,10 +362,14 @@ function AdminUsers() {
           ) : filteredUsers.length === 0 ? (
             <div className="p-12 text-center">
               <p className="font-semibold text-slate-800">
-                No users match these filters
+                {hasInitialLoadError
+                  ? 'User data is unavailable'
+                  : 'No users match these filters'}
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                Try a different username, role, or account status.
+                {hasInitialLoadError
+                  ? 'Use Refresh users to try loading the records again.'
+                  : 'Try a different username, role, or account status.'}
               </p>
             </div>
           ) : (
@@ -480,46 +488,15 @@ function AdminUsers() {
       </main>
 
       {pendingAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-5 backdrop-blur-sm">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="admin-confirm-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-          >
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">
-              Authorization change
-            </p>
-            <h2
-              id="admin-confirm-title"
-              className="mt-3 text-xl font-bold text-slate-900"
-            >
-              {pendingAction.title}
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {pendingAction.description}
-            </p>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPendingAction(null)}
-                disabled={isSaving}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmAction}
-                disabled={isSaving}
-                className="rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60"
-              >
-                {isSaving ? 'Saving...' : pendingAction.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AdminConfirmDialog
+          eyebrow="Authorization change"
+          title={pendingAction.title}
+          description={pendingAction.description}
+          confirmLabel={pendingAction.confirmLabel}
+          isSaving={isSaving}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={confirmAction}
+        />
       )}
     </AdminLayout>
   )

@@ -124,6 +124,7 @@ class HasActiveRestaurantAssignment(BasePermission):
             RestaurantManagerAssignment.objects.filter(
                 user=request.user,
                 is_active=True,
+                restaurant__is_active=True,
             ).exists()
         )
 
@@ -161,6 +162,7 @@ def get_managed_restaurant_ids(user):
         RestaurantManagerAssignment.objects.filter(
             user=user,
             is_active=True,
+            restaurant__is_active=True,
         )
         .values_list(
             "restaurant_id",

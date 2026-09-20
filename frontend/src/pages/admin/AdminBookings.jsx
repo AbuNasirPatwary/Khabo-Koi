@@ -61,6 +61,7 @@ function AdminBookings() {
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const hasInitialLoadError = Boolean(errorMessage && bookings.length === 0)
 
   async function loadBookings({ showLoader = true } = {}) {
     if (showLoader) {
@@ -220,7 +221,7 @@ function AdminBookings() {
                 Live
               </span>
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                {isLoading ? '—' : value}
+                {isLoading ? '—' : hasInitialLoadError ? 'Unavailable' : value}
               </p>
               <p className="mt-1 text-sm text-slate-500">{label}</p>
             </article>
@@ -290,12 +291,16 @@ function AdminBookings() {
           ) : filteredBookings.length === 0 ? (
             <div className="p-12 text-center">
               <p className="font-semibold text-slate-800">
-                {bookings.length === 0
+                {hasInitialLoadError
+                  ? 'Booking data is unavailable'
+                  : bookings.length === 0
                   ? 'No bookings have been created yet'
                   : 'No bookings match these filters'}
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                {bookings.length === 0
+                {hasInitialLoadError
+                  ? 'Use Refresh bookings to try loading the records again.'
+                  : bookings.length === 0
                   ? 'New customer reservations will appear here automatically.'
                   : 'Try another customer, restaurant, or booking status.'}
               </p>

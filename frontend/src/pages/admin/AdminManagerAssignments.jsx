@@ -8,6 +8,7 @@ import {
   getRestaurantsForAdminAssignment,
   updatePlatformAdminManagerAssignment,
 } from '../../api/adminApi'
+import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
 
 
@@ -25,6 +26,7 @@ function AdminManagerAssignments() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingAssignment, setPendingAssignment] = useState(null)
+  const hasInitialLoadError = Boolean(errorMessage && assignments.length === 0)
 
   async function loadPageData({ showLoader = true } = {}) {
     if (showLoader) {
@@ -245,7 +247,7 @@ function AdminManagerAssignments() {
                 Live
               </span>
               <p className="mt-4 text-3xl font-bold text-slate-900">
-                {isLoading ? '—' : value}
+                {isLoading ? '—' : hasInitialLoadError ? 'Unavailable' : value}
               </p>
               <p className="mt-1 text-sm text-slate-500">{label}</p>
             </article>
@@ -254,7 +256,7 @@ function AdminManagerAssignments() {
 
         {(errorMessage || successMessage) && (
           <div
-            role="status"
+            role={errorMessage ? 'alert' : 'status'}
             className={`mt-6 rounded-xl border px-4 py-3 text-sm ${errorMessage
               ? 'border-red-200 bg-red-50 text-red-700'
               : 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -342,6 +344,7 @@ function AdminManagerAssignments() {
               />
             </label>
             <select
+              aria-label="Filter Manager assignments by status"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
@@ -359,10 +362,14 @@ function AdminManagerAssignments() {
           ) : filteredAssignments.length === 0 ? (
             <div className="p-12 text-center">
               <p className="font-semibold text-slate-800">
-                No Manager assignments found
+                {hasInitialLoadError
+                  ? 'Manager access data is unavailable'
+                  : 'No Manager assignments found'}
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                Create an assignment above or change the current filters.
+                {hasInitialLoadError
+                  ? 'Use Refresh access to try loading the records again.'
+                  : 'Create an assignment above or change the current filters.'}
               </p>
             </div>
           ) : (
@@ -407,12 +414,26 @@ function AdminManagerAssignments() {
                         <button
                           type="button"
                           onClick={() => setPendingAssignment(assignment)}
+                          disabled={(
+                            !assignment.is_active
+                            && !assignment.restaurant.is_active
+                          )}
+                          title={(
+                            !assignment.is_active
+                            && !assignment.restaurant.is_active
+                          )
+                            ? 'Activate the restaurant before restoring Manager access.'
+                            : undefined}
                           className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${assignment.is_active
                             ? 'border-red-200 text-red-700 hover:bg-red-50'
-                            : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                            : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400'
                           }`}
                         >
-                          {assignment.is_active ? 'Deactivate' : 'Reactivate'}
+                          {assignment.is_active
+                            ? 'Deactivate'
+                            : assignment.restaurant.is_active
+                              ? 'Reactivate'
+                              : 'Restaurant inactive'}
                         </button>
                       </td>
                     </tr>
@@ -425,53 +446,21 @@ function AdminManagerAssignments() {
       </main>
 
       {pendingAssignment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-5 backdrop-blur-sm">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="assignment-confirm-title"
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
-          >
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-600">
-              Restaurant access
-            </p>
-            <h2
-              id="assignment-confirm-title"
-              className="mt-3 text-xl font-bold text-slate-900"
-            >
-              {pendingAssignment.is_active
-                ? 'Deactivate Manager access?'
-                : 'Reactivate Manager access?'}
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {pendingAssignment.user.username} will {pendingAssignment.is_active
-                ? 'lose'
-                : 'regain'} access to {pendingAssignment.restaurant.name}.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPendingAssignment(null)}
-                disabled={isSaving}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmStatusChange}
-                disabled={isSaving}
-                className="rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60"
-              >
-                {isSaving
-                  ? 'Saving...'
-                  : pendingAssignment.is_active
-                    ? 'Deactivate'
-                    : 'Reactivate'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AdminConfirmDialog
+          eyebrow="Restaurant access"
+          title={pendingAssignment.is_active
+            ? 'Deactivate Manager access?'
+            : 'Reactivate Manager access?'}
+          description={`${pendingAssignment.user.username} will ${pendingAssignment.is_active
+            ? 'lose'
+            : 'regain'} access to ${pendingAssignment.restaurant.name}.`}
+          confirmLabel={pendingAssignment.is_active
+            ? 'Deactivate'
+            : 'Reactivate'}
+          isSaving={isSaving}
+          onCancel={() => setPendingAssignment(null)}
+          onConfirm={confirmStatusChange}
+        />
       )}
     </AdminLayout>
   )

@@ -172,8 +172,21 @@ class PlatformAdminRestaurantStatusSerializer(
             'is_active',
         ]
 
+    def validate(self, attributes):
+
+        if 'is_active' not in attributes:
+            raise serializers.ValidationError({
+                'is_active': 'This field is required.',
+            })
+
+        return attributes
+
     @transaction.atomic
     def update(self, restaurant, validated_data):
+
+        restaurant = Restaurant.objects.select_for_update().get(
+            id=restaurant.id,
+        )
 
         is_active = validated_data['is_active']
 
