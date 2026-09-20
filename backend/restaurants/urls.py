@@ -7,10 +7,26 @@ from .views import (
     TableAvailabilityAPIView,
     BookingCreateAPIView,
     MyBookingsAPIView,
+    PlatformAdminRestaurantListAPIView,
+    PlatformAdminRestaurantStatusAPIView,
 )
 
 
 urlpatterns = [
+
+    # Platform Admin oversight includes inactive restaurants and is protected
+    # independently from the public customer-facing restaurant catalogue.
+    path(
+        'admin/restaurants/',
+        PlatformAdminRestaurantListAPIView.as_view(),
+        name='platform-admin-restaurant-list',
+    ),
+
+    path(
+        'admin/restaurants/<int:pk>/status/',
+        PlatformAdminRestaurantStatusAPIView.as_view(),
+        name='platform-admin-restaurant-status',
+    ),
 
     path(
         'restaurants/',

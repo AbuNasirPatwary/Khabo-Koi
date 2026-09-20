@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils.dateparse import parse_date, parse_time
 
 from rest_framework.permissions import IsAuthenticated
@@ -10,9 +10,12 @@ from rest_framework import status
 from rest_framework.generics import (
     ListAPIView,
     RetrieveAPIView,
+    UpdateAPIView,
 )
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from accounts.permissions import IsPlatformAdmin
 
 from .models import (
     Restaurant,
@@ -24,6 +27,8 @@ from .models import (
 
 from .serializers import (
     RestaurantSerializer,
+    PlatformAdminRestaurantSerializer,
+    PlatformAdminRestaurantStatusSerializer,
     FoodItemSerializer,
     RestaurantTableSerializer,
     BookingSerializer,
@@ -105,6 +110,66 @@ class RestaurantDetailAPIView(RetrieveAPIView):
     queryset = Restaurant.objects.filter(
         is_active=True
     )
+
+
+# =============================================================================
+# PLATFORM ADMIN RESTAURANT OVERSIGHT
+# =============================================================================
+# These endpoints intentionally include inactive records. Public customers
+# continue to receive only active restaurants from RestaurantListAPIView.
+# =============================================================================
+
+class PlatformAdminRestaurantListAPIView(ListAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = PlatformAdminRestaurantSerializer
+
+    def get_queryset(self):
+
+        return (
+            Restaurant.objects
+            .annotate(
+                branch_count=Count(
+                    'branches',
+                    distinct=True,
+                ),
+                food_item_count=Count(
+                    'food_items',
+                    distinct=True,
+                ),
+                active_manager_count=Count(
+                    'manager_assignments',
+                    filter=Q(
+                        manager_assignments__is_active=True,
+                    ),
+                    distinct=True,
+                ),
+            )
+            .order_by('name')
+        )
+
+
+class PlatformAdminRestaurantStatusAPIView(UpdateAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminRestaurantStatusSerializer
+    )
+
+    http_method_names = [
+        'patch',
+        'options',
+    ]
+
+    queryset = Restaurant.objects.all()
 
 
 
