@@ -1,4 +1,8 @@
-import { Link, useNavigate } from 'react-router-dom'
+import {
+  Link,
+  NavLink,
+  useNavigate,
+} from 'react-router-dom'
 
 import { clearAuthentication } from '../../api/adminApi'
 
@@ -7,27 +11,27 @@ const navigationItems = [
   {
     label: 'Dashboard',
     symbol: 'D',
-    enabled: true,
+    to: '/platform-admin/dashboard',
   },
   {
     label: 'Restaurants',
     symbol: 'R',
-    enabled: false,
+    to: null,
   },
   {
     label: 'Users',
     symbol: 'U',
-    enabled: false,
+    to: '/platform-admin/users',
   },
   {
     label: 'Bookings',
     symbol: 'B',
-    enabled: false,
+    to: null,
   },
   {
     label: 'System Settings',
     symbol: 'S',
-    enabled: false,
+    to: null,
   },
 ]
 
@@ -67,27 +71,48 @@ function AdminLayout({ children, profile }) {
 
           <nav className="mt-8 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
             {navigationItems.map((item) => {
-              const itemClasses = item.enabled
-                ? 'bg-orange-500 text-white shadow-lg shadow-orange-950/20'
-                : 'cursor-not-allowed text-white/55 hover:bg-white/5'
-
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled={!item.enabled}
-                  className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${itemClasses}`}
-                  title={item.enabled ? item.label : `${item.label} is coming next`}
-                >
+              const itemContent = (
+                <>
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-xs font-bold">
                     {item.symbol}
                   </span>
                   {item.label}
-                  {!item.enabled && (
+                  {!item.to && (
                     <span className="ml-auto text-[10px] uppercase tracking-wide text-white/30">
                       Soon
                     </span>
                   )}
+                </>
+              )
+
+              if (item.to) {
+                return (
+                  <NavLink
+                    key={item.label}
+                    to={item.to}
+                    className={({ isActive }) => (
+                      `flex items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${isActive
+                        ? 'bg-orange-500 text-white shadow-lg shadow-orange-950/20'
+                        : 'text-white/65 hover:bg-white/5 hover:text-white'
+                      }`
+                    )}
+                  >
+                    {itemContent}
+                  </NavLink>
+                )
+              }
+
+              // Keep future Figma sections visible without linking users to
+              // pages whose backend workflows do not exist yet.
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  disabled
+                  className="flex cursor-not-allowed items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-white/55"
+                  title={`${item.label} is coming next`}
+                >
+                  {itemContent}
                 </button>
               )
             })}

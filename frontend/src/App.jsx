@@ -10,6 +10,7 @@ import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminLogin from './pages/admin/AdminLogin'
+import AdminUsers from './pages/admin/AdminUsers'
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
 
 
@@ -71,6 +72,15 @@ function App() {
           element={(
             <ProtectedAdminRoute>
               <AdminDashboard />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/users"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminUsers />
             </ProtectedAdminRoute>
           )}
         />

@@ -138,6 +138,68 @@ export async function getPlatformAdminDashboard() {
 }
 
 
+export async function getPlatformAdminUsers() {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/users/`,
+    {
+      headers: getAuthorizationHeaders(),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to load Platform Admin users.',
+  )
+}
+
+
+// Authorization mutations stay in this API layer so UI components never need
+// to know endpoint paths or repeat authenticated request headers.
+export async function updatePlatformAdminUserRole(userId, role) {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/users/${userId}/role/`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...getAuthorizationHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ role }),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to update the user role.',
+  )
+}
+
+
+export async function updatePlatformAdminAccountStatus(
+  userId,
+  isActive,
+) {
+  const response = await fetch(
+    `${API_URL}/accounts/admin/users/${userId}/status/`,
+    {
+      method: 'PATCH',
+      headers: {
+        ...getAuthorizationHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        is_active: isActive,
+      }),
+    },
+  )
+
+  return readJsonResponse(
+    response,
+    'Unable to update the account status.',
+  )
+}
+
+
 export function clearAuthentication() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
