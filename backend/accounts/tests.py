@@ -1830,3 +1830,314 @@ class PlatformAdminManagerAssignmentAPITests(APITestCase):
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
+
+
+# =============================================================================
+# PLATFORM ADMIN ACCOUNT STATUS API TESTS
+# =============================================================================
+# Account suspension is an authorization operation, not merely a profile edit.
+# These tests prove that only Platform Admins may perform it, self-lockout is
+# prevented, and suspended Managers immediately lose restaurant access.
+# =============================================================================
+
+class PlatformAdminAccountStatusAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.platform_admin = User.objects.create_user(
+            username="status-admin",
+            email="status-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        self.customer = User.objects.create_user(
+            username="status-customer",
+            email="status-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="status-manager",
+            email="status-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.restaurant = Restaurant.objects.create(
+            name="Status Test Restaurant",
+            cuisine="Test Cuisine",
+        )
+
+        self.assignment = (
+            RestaurantManagerAssignment.objects.create(
+                user=self.manager,
+                restaurant=self.restaurant,
+                assigned_by=self.platform_admin,
+                is_active=True,
+            )
+        )
+
+    def authenticate(self, user):
+
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def status_url(self, user):
+
+        return reverse(
+            "platform_admin_account_status",
+            kwargs={
+                "user_id": user.id,
+            },
+        )
+
+    def test_anonymous_user_cannot_change_account_status(self):
+
+        response = self.client.patch(
+            self.status_url(
+                self.customer
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_cannot_change_account_status(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.manager
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_manager_cannot_change_account_status(self):
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.customer
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_platform_admin_can_deactivate_customer(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.customer
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.customer.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertFalse(
+            self.customer.is_active
+        )
+
+    def test_deactivating_manager_deactivates_assignments(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.manager
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.manager.refresh_from_db()
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertFalse(
+            self.manager.is_active
+        )
+
+        self.assertFalse(
+            self.assignment.is_active
+        )
+
+    def test_reactivation_does_not_restore_assignments(self):
+
+        self.manager.is_active = False
+        self.manager.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.assignment.is_active = False
+        self.assignment.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.manager
+            ),
+            {
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.manager.refresh_from_db()
+        self.assignment.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertTrue(
+            self.manager.is_active
+        )
+
+        # Restaurant access must be granted again deliberately.
+        self.assertFalse(
+            self.assignment.is_active
+        )
+
+    def test_platform_admin_cannot_deactivate_own_account(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.patch(
+            self.status_url(
+                self.platform_admin
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.platform_admin.refresh_from_db()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertTrue(
+            self.platform_admin.is_active
+        )
+
+    def test_account_status_endpoint_rejects_put(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.put(
+            self.status_url(
+                self.customer
+            ),
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_missing_user_returns_not_found(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        missing_user_url = reverse(
+            "platform_admin_account_status",
+            kwargs={
+                "user_id": 999999,
+            },
+        )
+
+        response = self.client.patch(
+            missing_user_url,
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )

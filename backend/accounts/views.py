@@ -10,13 +10,7 @@ from .models import (
 )
 from .permissions import IsPlatformAdmin
 from .serializers import (
-    PlatformAdminRoleUpdateSerializer,
-    PlatformAdminUserSerializer,
-    ProfileSerializer,
-    RegisterSerializer,
-)
-
-from .serializers import (
+    PlatformAdminAccountStatusSerializer,
     PlatformAdminManagerAssignmentCreateSerializer,
     PlatformAdminManagerAssignmentSerializer,
     PlatformAdminManagerAssignmentStatusSerializer,
@@ -244,3 +238,41 @@ class PlatformAdminManagerAssignmentStatusView(
 
     lookup_field = "id"
     lookup_url_kwarg = "assignment_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN ACCOUNT STATUS UPDATE
+# =============================================================================
+# PATCH /api/accounts/admin/users/<user_id>/status/
+#
+# This endpoint suspends or reactivates a Django user account. Suspension also
+# deactivates restaurant assignments through the serializer's atomic update.
+# =============================================================================
+
+class PlatformAdminAccountStatusView(
+    generics.UpdateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminAccountStatusSerializer
+    )
+
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        User.objects
+        .select_related(
+            "profile",
+        )
+    )
+
+    lookup_field = "id"
+    lookup_url_kwarg = "user_id"

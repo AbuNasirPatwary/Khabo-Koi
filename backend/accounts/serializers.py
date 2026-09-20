@@ -406,3 +406,67 @@ class PlatformAdminManagerAssignmentStatusSerializer(
             )
 
         return is_active
+
+
+# =============================================================================
+# PLATFORM ADMIN ACCOUNT STATUS UPDATE
+# =============================================================================
+# Platform Admins may suspend or reactivate user accounts through Django's
+# is_active field.
+#
+# Suspending an account also removes its active restaurant access. Reactivating
+# the account does not automatically restore previous Manager assignments.
+# =============================================================================
+
+class PlatformAdminAccountStatusSerializer(
+    serializers.ModelSerializer
+):
+
+    class Meta:
+
+        model = User
+
+        fields = [
+            "is_active",
+        ]
+
+    def validate_is_active(self, is_active):
+
+        request = self.context.get(
+            "request"
+        )
+
+        # Prevent the current Platform Admin from suspending their own account
+        # and immediately locking themselves out of the Admin interface.
+        if (
+            request is not None
+            and self.instance.id
+            == request.user.id
+            and not is_active
+        ):
+            raise serializers.ValidationError(
+                "You cannot deactivate your own Platform Admin account."
+            )
+
+        return is_active
+
+    @transaction.atomic
+    def update(self, user, validated_data):
+
+        is_active = validated_data["is_active"]
+
+        user.is_active = is_active
+        user.save(
+            update_fields=[
+                "is_active",
+            ]
+        )
+
+        # Suspending any account deactivates stale Manager assignments,
+        # regardless of its current product role.
+        if not is_active:
+            user.restaurant_assignments.update(
+                is_active=False
+            )
+
+        return user
