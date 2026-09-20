@@ -29,6 +29,7 @@ from .serializers import (
     RestaurantSerializer,
     PlatformAdminRestaurantSerializer,
     PlatformAdminRestaurantStatusSerializer,
+    PlatformAdminBookingSerializer,
     FoodItemSerializer,
     RestaurantTableSerializer,
     BookingSerializer,
@@ -170,6 +171,40 @@ class PlatformAdminRestaurantStatusAPIView(UpdateAPIView):
     ]
 
     queryset = Restaurant.objects.all()
+
+
+# =============================================================================
+# PLATFORM ADMIN BOOKING OVERSIGHT
+# =============================================================================
+# This endpoint is read-only. Restaurant Managers own operational status
+# changes, while Platform Admins receive a complete platform-wide view for
+# monitoring and support.
+# =============================================================================
+
+class PlatformAdminBookingListAPIView(ListAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = PlatformAdminBookingSerializer
+
+    def get_queryset(self):
+
+        return (
+            Booking.objects
+            .select_related(
+                'user',
+                'branch',
+                'branch__restaurant',
+                'table',
+            )
+            .order_by(
+                '-created_at',
+                '-id',
+            )
+        )
 
 
 

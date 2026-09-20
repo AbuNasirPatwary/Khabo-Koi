@@ -9,6 +9,7 @@ from .views import (
     MyBookingsAPIView,
     PlatformAdminRestaurantListAPIView,
     PlatformAdminRestaurantStatusAPIView,
+    PlatformAdminBookingListAPIView,
 )
 
 
@@ -26,6 +27,12 @@ urlpatterns = [
         'admin/restaurants/<int:pk>/status/',
         PlatformAdminRestaurantStatusAPIView.as_view(),
         name='platform-admin-restaurant-status',
+    ),
+
+    path(
+        'admin/bookings/',
+        PlatformAdminBookingListAPIView.as_view(),
+        name='platform-admin-booking-list',
     ),
 
     path(
