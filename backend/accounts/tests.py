@@ -1,3 +1,5 @@
+from datetime import date, time
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, transaction
@@ -9,7 +11,12 @@ from rest_framework.test import (
     APITestCase,
 )
 
-from restaurants.models import Restaurant
+from restaurants.models import (
+    Booking,
+    Branch,
+    Restaurant,
+    RestaurantTable,
+)
 
 from .models import (
     RestaurantManagerAssignment,
@@ -2140,4 +2147,194 @@ class PlatformAdminAccountStatusAPITests(APITestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_404_NOT_FOUND,
+        )
+
+
+# =============================================================================
+# PLATFORM ADMIN DASHBOARD API TESTS
+# =============================================================================
+# The dashboard must use real database counts and remain inaccessible to every
+# role except Platform Admin. Unsupported prototype metrics are deliberately
+# absent from the response.
+# =============================================================================
+
+class PlatformAdminDashboardAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.dashboard_url = reverse(
+            "platform_admin_dashboard"
+        )
+
+        self.platform_admin = User.objects.create_user(
+            username="dashboard-admin",
+            email="dashboard-admin@example.com",
+            password="test-password-123",
+        )
+
+        self.platform_admin.profile.role = (
+            UserProfile.Role.ADMIN
+        )
+
+        self.platform_admin.profile.save()
+
+        self.customer = User.objects.create_user(
+            username="dashboard-customer",
+            email="dashboard-customer@example.com",
+            password="test-password-123",
+        )
+
+        self.manager = User.objects.create_user(
+            username="dashboard-manager",
+            email="dashboard-manager@example.com",
+            password="test-password-123",
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+
+        self.manager.profile.save()
+
+        self.inactive_customer = User.objects.create_user(
+            username="dashboard-inactive",
+            email="dashboard-inactive@example.com",
+            password="test-password-123",
+            is_active=False,
+        )
+
+        self.active_restaurant = Restaurant.objects.create(
+            name="Active Dashboard Restaurant",
+            cuisine="Test Cuisine",
+            is_active=True,
+        )
+
+        Restaurant.objects.create(
+            name="Inactive Dashboard Restaurant",
+            cuisine="Test Cuisine",
+            is_active=False,
+        )
+
+        branch = Branch.objects.create(
+            restaurant=self.active_restaurant,
+            name="Dashboard Branch",
+        )
+
+        table = RestaurantTable.objects.create(
+            branch=branch,
+            table_number="D1",
+            capacity=4,
+        )
+
+        for booking_status in [
+            "PENDING",
+            "PENDING",
+            "CONFIRMED",
+        ]:
+
+            Booking.objects.create(
+                user=self.customer,
+                branch=branch,
+                table=table,
+                reservation_date=date(
+                    2026,
+                    9,
+                    20,
+                ),
+                start_time=time(
+                    18,
+                    0,
+                ),
+                end_time=time(
+                    19,
+                    30,
+                ),
+                guest_count=2,
+                status=booking_status,
+            )
+
+    def authenticate(self, user):
+
+        self.client.force_authenticate(
+            user=user
+        )
+
+    def test_anonymous_user_cannot_view_dashboard(self):
+
+        response = self.client.get(
+            self.dashboard_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_customer_cannot_view_dashboard(self):
+
+        self.authenticate(
+            self.customer
+        )
+
+        response = self.client.get(
+            self.dashboard_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_restaurant_manager_cannot_view_dashboard(self):
+
+        self.authenticate(
+            self.manager
+        )
+
+        response = self.client.get(
+            self.dashboard_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_platform_admin_receives_real_dashboard_counts(self):
+
+        self.authenticate(
+            self.platform_admin
+        )
+
+        response = self.client.get(
+            self.dashboard_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data,
+            {
+                "total_restaurants": 2,
+                "active_restaurants": 1,
+                "total_users": 4,
+                "active_users": 3,
+                "total_bookings": 3,
+                "pending_bookings": 2,
+            },
+        )
+
+        # Payment and restaurant-approval models do not exist yet. Omitting
+        # these values is more accurate than returning decorative Figma data.
+        self.assertNotIn(
+            "payment_volume",
+            response.data,
+        )
+
+        self.assertNotIn(
+            "pending_approvals",
+            response.data,
         )

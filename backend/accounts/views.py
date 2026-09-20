@@ -1,8 +1,14 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Count, Q
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from restaurants.models import (
+    Booking,
+    Restaurant,
+)
 
 from .models import (
     RestaurantManagerAssignment,
@@ -11,6 +17,7 @@ from .models import (
 from .permissions import IsPlatformAdmin
 from .serializers import (
     PlatformAdminAccountStatusSerializer,
+    PlatformAdminDashboardSerializer,
     PlatformAdminManagerAssignmentCreateSerializer,
     PlatformAdminManagerAssignmentSerializer,
     PlatformAdminManagerAssignmentStatusSerializer,
@@ -276,3 +283,79 @@ class PlatformAdminAccountStatusView(
 
     lookup_field = "id"
     lookup_url_kwarg = "user_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN DASHBOARD SUMMARY
+# =============================================================================
+# GET /api/accounts/admin/dashboard/
+#
+# The six values map naturally to dashboard summary cards while remaining
+# grounded in models that already exist. Approval and payment metrics will be
+# added only after those domain models are designed and migrated.
+# =============================================================================
+
+class PlatformAdminDashboardView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    def get(self, request):
+
+        restaurant_counts = Restaurant.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            active=Count(
+                "id",
+                filter=Q(
+                    is_active=True,
+                ),
+            ),
+        )
+
+        user_counts = User.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            active=Count(
+                "id",
+                filter=Q(
+                    is_active=True,
+                ),
+            ),
+        )
+
+        booking_counts = Booking.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            pending=Count(
+                "id",
+                filter=Q(
+                    status="PENDING",
+                ),
+            ),
+        )
+
+        serializer = PlatformAdminDashboardSerializer(
+            {
+                "total_restaurants": (
+                    restaurant_counts["total"]
+                ),
+                "active_restaurants": (
+                    restaurant_counts["active"]
+                ),
+                "total_users": user_counts["total"],
+                "active_users": user_counts["active"],
+                "total_bookings": booking_counts["total"],
+                "pending_bookings": booking_counts["pending"],
+            }
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )

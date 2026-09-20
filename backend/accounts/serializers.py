@@ -470,3 +470,40 @@ class PlatformAdminAccountStatusSerializer(
             )
 
         return user
+
+
+# =============================================================================
+# PLATFORM ADMIN DASHBOARD SUMMARY
+# =============================================================================
+# The Figma dashboard contains summary cards. These fields are backed only by
+# data that currently exists in PostgreSQL; unsupported approval, revenue and
+# payment figures are intentionally not invented.
+# =============================================================================
+
+class PlatformAdminDashboardSerializer(
+    serializers.Serializer
+):
+
+    total_restaurants = serializers.IntegerField(
+        read_only=True,
+    )
+
+    active_restaurants = serializers.IntegerField(
+        read_only=True,
+    )
+
+    total_users = serializers.IntegerField(
+        read_only=True,
+    )
+
+    active_users = serializers.IntegerField(
+        read_only=True,
+    )
+
+    total_bookings = serializers.IntegerField(
+        read_only=True,
+    )
+
+    pending_bookings = serializers.IntegerField(
+        read_only=True,
+    )

@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 
 from .views import (
     PlatformAdminAccountStatusView,
+    PlatformAdminDashboardView,
     PlatformAdminManagerAssignmentListCreateView,
     PlatformAdminManagerAssignmentStatusView,
     PlatformAdminRoleUpdateView,
@@ -42,6 +43,13 @@ urlpatterns = [
         "profile/",
         ProfileView.as_view(),
         name="profile",
+    ),
+
+    # Platform Admin dashboard summary backed by live database counts.
+    path(
+        "admin/dashboard/",
+        PlatformAdminDashboardView.as_view(),
+        name="platform_admin_dashboard",
     ),
 
     # Platform Admin-only account overview.
