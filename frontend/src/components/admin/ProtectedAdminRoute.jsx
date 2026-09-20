@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 
-import { getPlatformAdminProfile } from '../../api/adminApi'
+import {
+  ADMIN_AUTH_EXPIRED_EVENT,
+  getPlatformAdminProfile,
+} from '../../api/adminApi'
 
 
 function ProtectedAdminRoute({ children }) {
@@ -13,6 +16,21 @@ function ProtectedAdminRoute({ children }) {
 
   useEffect(() => {
     let isCancelled = false
+
+    function handleAuthenticationExpiry() {
+      if (!isCancelled) {
+        setAccessState({
+          isChecking: false,
+          isAuthorized: false,
+          message: 'Your Admin session has expired. Please sign in again.',
+        })
+      }
+    }
+
+    window.addEventListener(
+      ADMIN_AUTH_EXPIRED_EVENT,
+      handleAuthenticationExpiry,
+    )
 
     getPlatformAdminProfile()
       .then(() => {
@@ -36,6 +54,10 @@ function ProtectedAdminRoute({ children }) {
 
     return () => {
       isCancelled = true
+      window.removeEventListener(
+        ADMIN_AUTH_EXPIRED_EVENT,
+        handleAuthenticationExpiry,
+      )
     }
   }, [])
 

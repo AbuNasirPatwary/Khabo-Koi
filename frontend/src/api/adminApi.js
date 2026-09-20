@@ -41,20 +41,166 @@ function getAccessToken() {
 }
 
 
-function getAuthorizationHeaders() {
-  const token = getAccessToken()
+function getRefreshToken() {
+  return localStorage.getItem('refresh_token')
+}
 
-  if (!token) {
-    throw new Error('Please sign in with a Platform Admin account.')
+
+export function clearAuthentication() {
+  sessionGeneration += 1
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+}
+
+
+export const ADMIN_AUTH_EXPIRED_EVENT = 'khabo-koi:admin-auth-expired'
+
+
+let sessionGeneration = 0
+let refreshRequest = null
+
+
+function createExpiredSessionError() {
+  const error = new Error(
+    'Your Admin session has expired. Please sign in again.',
+  )
+
+  error.code = 'ADMIN_AUTH_EXPIRED'
+
+  return error
+}
+
+
+function expireAuthentication() {
+  clearAuthentication()
+  window.dispatchEvent(
+    new CustomEvent(ADMIN_AUTH_EXPIRED_EVENT),
+  )
+
+  return createExpiredSessionError()
+}
+
+
+async function refreshAccessToken() {
+  const refreshToken = getRefreshToken()
+  const requestGeneration = sessionGeneration
+
+  if (!refreshToken) {
+    throw expireAuthentication()
   }
 
-  return {
-    Authorization: `Bearer ${token}`,
+  // Several dashboard requests can discover an expired access token at the
+  // same time. Reusing one in-flight refresh prevents duplicate renewals.
+  if (
+    !refreshRequest
+    || refreshRequest.generation !== requestGeneration
+    || refreshRequest.refreshToken !== refreshToken
+  ) {
+    const request = fetch(
+      `${API_URL}/accounts/token/refresh/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refresh: refreshToken,
+        }),
+      },
+    )
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}))
+
+        // Logout or another login may have happened while this request was
+        // in flight. Check that first: even a failed stale response must not
+        // clear the credentials from a newer login.
+        if (
+          sessionGeneration !== requestGeneration
+          || getRefreshToken() !== refreshToken
+        ) {
+          throw createExpiredSessionError()
+        }
+
+        if (!response.ok || !data.access) {
+          throw expireAuthentication()
+        }
+
+        localStorage.setItem('access_token', data.access)
+
+        // SimpleJWT may rotate refresh tokens when that option is enabled.
+        if (data.refresh) {
+          localStorage.setItem('refresh_token', data.refresh)
+        }
+
+        return data.access
+      })
+      .finally(() => {
+        if (refreshRequest?.request === request) {
+          refreshRequest = null
+        }
+      })
+
+    refreshRequest = {
+      generation: requestGeneration,
+      refreshToken,
+      request,
+    }
   }
+
+  return refreshRequest.request
+}
+
+
+async function authenticatedFetch(url, options = {}) {
+  let accessToken = getAccessToken()
+
+  if (!accessToken) {
+    accessToken = await refreshAccessToken()
+  }
+
+  const sendRequest = (token) => fetch(
+    url,
+    {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  )
+
+  let response = await sendRequest(accessToken)
+
+  // Only authentication failures trigger renewal. Permission failures remain
+  // visible because refreshing cannot grant a missing Platform Admin role.
+  if (response.status === 401) {
+    const latestAccessToken = getAccessToken()
+
+    // Another simultaneous request may already have renewed the token while
+    // this response was in flight. Reuse it instead of refreshing twice.
+    accessToken = (
+      latestAccessToken
+      && latestAccessToken !== accessToken
+    )
+      ? latestAccessToken
+      : await refreshAccessToken()
+
+    response = await sendRequest(accessToken)
+
+    if (response.status === 401) {
+      throw expireAuthentication()
+    }
+  }
+
+  return response
 }
 
 
 export async function loginPlatformAdmin(credentials) {
+  // A new login attempt must never inherit credentials from an older account.
+  clearAuthentication()
+  const loginGeneration = sessionGeneration
+
   const loginResponse = await fetch(
     `${API_URL}/accounts/login/`,
     {
@@ -93,6 +239,12 @@ export async function loginPlatformAdmin(credentials) {
     )
   }
 
+  // If the user logged out or started another sign-in while these requests
+  // were running, this older result must not replace the newer session.
+  if (sessionGeneration !== loginGeneration) {
+    throw createExpiredSessionError()
+  }
+
   localStorage.setItem('access_token', tokens.access)
   localStorage.setItem('refresh_token', tokens.refresh)
 
@@ -101,11 +253,8 @@ export async function loginPlatformAdmin(credentials) {
 
 
 export async function getPlatformAdminProfile() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/profile/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   const profile = await readJsonResponse(
@@ -114,6 +263,7 @@ export async function getPlatformAdminProfile() {
   )
 
   if (profile.role !== 'ADMIN') {
+    clearAuthentication()
     throw new Error(
       'This account does not have Platform Admin access.',
     )
@@ -124,11 +274,8 @@ export async function getPlatformAdminProfile() {
 
 
 export async function getPlatformAdminDashboard() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/dashboard/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   return readJsonResponse(
@@ -139,11 +286,8 @@ export async function getPlatformAdminDashboard() {
 
 
 export async function getPlatformAdminUsers() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/users/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   return readJsonResponse(
@@ -156,12 +300,11 @@ export async function getPlatformAdminUsers() {
 // Authorization mutations stay in this API layer so UI components never need
 // to know endpoint paths or repeat authenticated request headers.
 export async function updatePlatformAdminUserRole(userId, role) {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/users/${userId}/role/`,
     {
       method: 'PATCH',
       headers: {
-        ...getAuthorizationHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ role }),
@@ -179,12 +322,11 @@ export async function updatePlatformAdminAccountStatus(
   userId,
   isActive,
 ) {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/users/${userId}/status/`,
     {
       method: 'PATCH',
       headers: {
-        ...getAuthorizationHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -201,11 +343,8 @@ export async function updatePlatformAdminAccountStatus(
 
 
 export async function getPlatformAdminManagerAssignments() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/manager-assignments/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   return readJsonResponse(
@@ -219,12 +358,11 @@ export async function createPlatformAdminManagerAssignment(
   userId,
   restaurantId,
 ) {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/manager-assignments/`,
     {
       method: 'POST',
       headers: {
-        ...getAuthorizationHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -245,12 +383,11 @@ export async function updatePlatformAdminManagerAssignment(
   assignmentId,
   isActive,
 ) {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/accounts/admin/manager-assignments/${assignmentId}/`,
     {
       method: 'PATCH',
       headers: {
-        ...getAuthorizationHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -279,11 +416,8 @@ export async function getRestaurantsForAdminAssignment() {
 
 
 export async function getPlatformAdminRestaurants() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/admin/restaurants/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   return readJsonResponse(
@@ -297,12 +431,11 @@ export async function updatePlatformAdminRestaurantStatus(
   restaurantId,
   isActive,
 ) {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/admin/restaurants/${restaurantId}/status/`,
     {
       method: 'PATCH',
       headers: {
-        ...getAuthorizationHeaders(),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -319,21 +452,12 @@ export async function updatePlatformAdminRestaurantStatus(
 
 
 export async function getPlatformAdminBookings() {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/admin/bookings/`,
-    {
-      headers: getAuthorizationHeaders(),
-    },
   )
 
   return readJsonResponse(
     response,
     'Unable to load booking oversight data.',
   )
-}
-
-
-export function clearAuthentication() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
 }
