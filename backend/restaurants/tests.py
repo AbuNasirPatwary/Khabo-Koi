@@ -14,6 +14,7 @@ from .models import (
     Restaurant,
     Branch,
     FoodItem,
+    RestaurantTable,
 )
 
 
@@ -1159,4 +1160,666 @@ class ManagerMenuAPITests(APITestCase):
 
         self.assertTrue(
             item.is_available
+        )
+
+class ManagerTableAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.url = reverse(
+            'manager-table-list-create'
+        )
+
+        self.restaurant = Restaurant.objects.create(
+            name='Table Restaurant',
+            cuisine='Test Cuisine',
+        )
+
+        self.other_restaurant = Restaurant.objects.create(
+            name='Other Table Restaurant',
+            cuisine='Other Cuisine',
+        )
+
+        self.branch = Branch.objects.create(
+            restaurant=self.restaurant,
+            name='Main Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+        )
+
+        self.other_branch = Branch.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+        )
+
+        self.manager = User.objects.create_user(
+            username='table_manager_test',
+            password='testpass123',
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+        self.manager.profile.save()
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            is_active=True,
+        )
+
+        self.customer = User.objects.create_user(
+            username='table_customer_test',
+            password='testpass123',
+        )
+
+    def test_manager_sees_only_assigned_restaurant_tables(self):
+
+        own_table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T1',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='T2',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            own_table.id,
+        )
+
+
+    def test_manager_can_create_table_for_owned_branch(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'branch_id': self.branch.id,
+                'table_number': 'T10',
+                'capacity': 6,
+                'seating_type': 'WINDOW',
+                'is_active': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        table = RestaurantTable.objects.get(
+            table_number='T10'
+        )
+
+        self.assertEqual(
+            table.branch,
+            self.branch,
+        )
+
+        self.assertEqual(
+            table.capacity,
+            6,
+        )
+
+    def test_manager_cannot_create_table_for_unassigned_branch(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'branch_id': self.other_branch.id,
+                'table_number': 'T20',
+                'capacity': 4,
+                'seating_type': 'INDOOR',
+                'is_active': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.assertFalse(
+            RestaurantTable.objects.filter(
+                branch=self.other_branch,
+                table_number='T20',
+            ).exists()
+        )
+
+
+    def test_table_capacity_must_be_greater_than_zero(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'branch_id': self.branch.id,
+                'table_number': 'T30',
+                'capacity': 0,
+                'seating_type': 'INDOOR',
+                'is_active': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_invalid_seating_type_is_rejected(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'branch_id': self.branch.id,
+                'table_number': 'T40',
+                'capacity': 4,
+                'seating_type': 'INVALID',
+                'is_active': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_duplicate_table_number_in_same_branch_is_rejected(self):
+
+        RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T50',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'branch_id': self.branch.id,
+                'table_number': 'T50',
+                'capacity': 6,
+                'seating_type': 'WINDOW',
+                'is_active': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            RestaurantTable.objects.filter(
+                branch=self.branch,
+                table_number='T50',
+            ).count(),
+            1,
+        )
+
+    def test_anonymous_user_receives_401(self):
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_customer_receives_403(self):
+
+        refresh = RefreshToken.for_user(
+            self.customer
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_manager_can_get_own_table_detail(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T60',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data['id'],
+            table.id,
+        )
+
+
+    def test_manager_cannot_get_unassigned_table(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='T70',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_manager_can_update_own_table(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T80',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'table_number': 'T81',
+                'capacity': 6,
+                'seating_type': 'WINDOW',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        table.refresh_from_db()
+
+        self.assertEqual(
+            table.table_number,
+            'T81',
+        )
+
+        self.assertEqual(
+            table.capacity,
+            6,
+        )
+
+        self.assertEqual(
+            table.seating_type,
+            'WINDOW',
+        )
+
+
+    def test_manager_cannot_update_unassigned_table(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='T90',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'capacity': 8,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        table.refresh_from_db()
+
+        self.assertEqual(
+            table.capacity,
+            4,
+        )
+
+    def test_duplicate_table_number_on_update_is_rejected(self):
+
+        RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T100',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T101',
+            capacity=4,
+            seating_type='WINDOW',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'table_number': 'T100',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        table.refresh_from_db()
+
+        self.assertEqual(
+            table.table_number,
+            'T101',
+        )
+
+
+    def test_manager_can_deactivate_own_table(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T110',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.delete(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        table.refresh_from_db()
+
+        self.assertFalse(
+            table.is_active
+        )
+
+        self.assertTrue(
+            RestaurantTable.objects.filter(
+                id=table.id
+            ).exists()
+        )
+
+
+    def test_manager_cannot_deactivate_unassigned_table(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='T120',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.delete(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        table.refresh_from_db()
+
+        self.assertTrue(
+            table.is_active
+        )
+
+    def test_manager_cannot_move_table_to_unassigned_branch(self):
+
+        table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='T130',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-table-detail',
+            args=[table.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'branch_id': self.other_branch.id,
+                'capacity': 6,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        table.refresh_from_db()
+
+        # Normal editable fields can change...
+        self.assertEqual(
+            table.capacity,
+            6,
+        )
+
+        # ...but the table must remain in its original owned branch.
+        self.assertEqual(
+            table.branch,
+            self.branch,
+        )
+
+        self.assertNotEqual(
+            table.branch,
+            self.other_branch,
         )

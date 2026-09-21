@@ -36,6 +36,7 @@ from .serializers import (
     ManagerRestaurantSerializer,
     ManagerBranchSerializer,
     ManagerFoodItemSerializer,
+    ManagerRestaurantTableSerializer,
 )
 
 
@@ -1259,6 +1260,318 @@ class ManagerMenuDetailAPIView(APIView):
             {
                 'message':
                     'Menu item deactivated successfully.'
+            },
+            status=status.HTTP_200_OK,
+        )
+
+# =============================================================================
+# MANAGER TABLE LIST + CREATE
+# =============================================================================
+# GET  /api/manager/tables/
+# POST /api/manager/tables/
+#
+# A table may only belong to a branch whose restaurant is actively assigned
+# to the authenticated Restaurant Manager.
+# =============================================================================
+
+class ManagerTableListCreateAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        tables = (
+            RestaurantTable.objects
+            .filter(
+                branch__restaurant_id__in=restaurant_ids,
+            )
+            .select_related(
+                'branch',
+                'branch__restaurant',
+            )
+            .order_by(
+                'branch__restaurant__name',
+                'branch__name',
+                'table_number',
+            )
+        )
+
+        serializer = ManagerRestaurantTableSerializer(
+            tables,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def post(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        branch_id = request.data.get(
+            'branch_id'
+        )
+
+        if not branch_id:
+
+            return Response(
+                {
+                    'error': 'branch_id is required.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+
+            branch_id = int(
+                branch_id
+            )
+
+        except (TypeError, ValueError):
+
+            return Response(
+                {
+                    'error':
+                        'branch_id must be a valid number.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+        try:
+
+            branch = Branch.objects.get(
+                id=branch_id,
+                restaurant_id__in=restaurant_ids,
+            )
+
+        except Branch.DoesNotExist:
+
+            return Response(
+                {
+                    'error': 'Branch not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+        table_number = request.data.get(
+            'table_number'
+        )
+
+        if (
+            table_number
+            and RestaurantTable.objects.filter(
+                branch=branch,
+                table_number=table_number,
+            ).exists()
+        ):
+
+            return Response(
+                {
+                    'error':
+                        'Table number already exists in this branch.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+        table_data = request.data.copy()
+
+        table_data.pop(
+            'branch_id',
+            None,
+        )
+
+
+        serializer = ManagerRestaurantTableSerializer(
+            data=table_data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        table = serializer.save(
+            branch=branch
+        )
+
+
+        return Response(
+            ManagerRestaurantTableSerializer(table).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+# =============================================================================
+# MANAGER TABLE DETAIL + UPDATE + DEACTIVATE
+# =============================================================================
+# GET    /api/manager/tables/<id>/
+# PATCH  /api/manager/tables/<id>/
+# DELETE /api/manager/tables/<id>/
+#
+# DELETE performs a soft deactivation by setting is_active=False.
+# =============================================================================
+
+class ManagerTableDetailAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get_table(self, request, pk):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        try:
+            return (
+                RestaurantTable.objects
+                .select_related(
+                    'branch',
+                    'branch__restaurant',
+                )
+                .get(
+                    id=pk,
+                    branch__restaurant_id__in=restaurant_ids,
+                )
+            )
+
+        except RestaurantTable.DoesNotExist:
+            return None
+
+
+    def get(self, request, pk):
+
+        table = self.get_table(
+            request,
+            pk,
+        )
+
+        if table is None:
+            return Response(
+                {
+                    'error': 'Table not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerRestaurantTableSerializer(
+            table
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def patch(self, request, pk):
+
+        table = self.get_table(
+            request,
+            pk,
+        )
+
+        if table is None:
+            return Response(
+                {
+                    'error': 'Table not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_table_number = request.data.get(
+            'table_number'
+        )
+
+        if (
+            new_table_number
+            and RestaurantTable.objects.filter(
+                branch=table.branch,
+                table_number=new_table_number,
+            )
+            .exclude(
+                id=table.id
+            )
+            .exists()
+        ):
+            return Response(
+                {
+                    'error':
+                        'Table number already exists in this branch.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        table_data = request.data.copy()
+
+        # Branch cannot be changed through PATCH.
+        table_data.pop(
+            'branch_id',
+            None,
+        )
+
+        serializer = ManagerRestaurantTableSerializer(
+            table,
+            data=table_data,
+            partial=True,
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def delete(self, request, pk):
+
+        table = self.get_table(
+            request,
+            pk,
+        )
+
+        if table is None:
+            return Response(
+                {
+                    'error': 'Table not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        table.is_active = False
+
+        table.save(
+            update_fields=[
+                'is_active',
+            ]
+        )
+
+        return Response(
+            {
+                'message':
+                    'Table deactivated successfully.'
             },
             status=status.HTTP_200_OK,
         )

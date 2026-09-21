@@ -274,3 +274,52 @@ class ManagerFoodItemSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+# =============================================================================
+# MANAGER RESTAURANT TABLE
+# =============================================================================
+# Tables belong to restaurant branches. Branch ownership is validated by the
+# Manager API view before a table is created or moved.
+# =============================================================================
+
+class ManagerRestaurantTableSerializer(serializers.ModelSerializer):
+
+    branch_name = serializers.CharField(
+        source='branch.name',
+        read_only=True,
+    )
+
+    restaurant_name = serializers.CharField(
+        source='branch.restaurant.name',
+        read_only=True,
+    )
+
+    class Meta:
+        model = RestaurantTable
+
+        fields = [
+            'id',
+            'branch',
+            'branch_name',
+            'restaurant_name',
+            'table_number',
+            'capacity',
+            'seating_type',
+            'is_active',
+        ]
+
+        read_only_fields = [
+            'id',
+            'branch',
+            'branch_name',
+            'restaurant_name',
+        ]
+
+    def validate_capacity(self, value):
+
+        if value <= 0:
+            raise serializers.ValidationError(
+                'Capacity must be greater than zero.'
+            )
+
+        return value
