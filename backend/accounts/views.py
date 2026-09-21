@@ -1,13 +1,35 @@
-from rest_framework import generics
-from rest_framework.response import Response
-from rest_framework import status
+from django.contrib.auth import get_user_model
+from django.db.models import Count, Q
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from restaurants.models import (
+    Booking,
+    Restaurant,
+)
+
+from .models import (
+    RestaurantManagerAssignment,
+    UserProfile,
+)
+from .permissions import IsPlatformAdmin
 from .serializers import (
+    PlatformAdminAccountStatusSerializer,
+    PlatformAdminDashboardSerializer,
+    PlatformAdminManagerAssignmentCreateSerializer,
+    PlatformAdminManagerAssignmentSerializer,
+    PlatformAdminManagerAssignmentStatusSerializer,
+    PlatformAdminRoleUpdateSerializer,
+    PlatformAdminUserSerializer,
     ProfileSerializer,
     RegisterSerializer,
 )
+
+
+User = get_user_model()
+
 
 class RegisterView(generics.CreateAPIView):
 
@@ -61,4 +83,279 @@ class ProfileView(APIView):
 
         return Response(
             serializer.data
+        )
+
+
+# =============================================================================
+# PLATFORM ADMIN USER LIST
+# =============================================================================
+# GET /api/accounts/admin/users/
+#
+# This endpoint gives Platform Admins a safe, read-only overview of user
+# accounts. Role modification will be implemented separately so reading data
+# and changing authorization remain independently testable operations.
+# =============================================================================
+
+class PlatformAdminUserListView(generics.ListAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminUserSerializer
+    )
+
+    def get_queryset(self):
+
+        # select_related loads each UserProfile in the same database query,
+        # avoiding one additional query for every user in the Admin table.
+        #
+        # Inactive users remain visible because Platform Admins need to inspect
+        # suspended accounts as well as active ones.
+        return (
+            User.objects
+            .select_related(
+                "profile",
+            )
+            .order_by(
+                "username",
+            )
+        )
+
+
+# =============================================================================
+# PLATFORM ADMIN ROLE UPDATE
+# =============================================================================
+# PATCH /api/accounts/admin/users/<user_id>/role/
+#
+# The URL identifies a Django User, while the endpoint updates that user's
+# related UserProfile because Khabo-Koi roles live on the profile model.
+# =============================================================================
+
+class PlatformAdminRoleUpdateView(generics.UpdateAPIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminRoleUpdateSerializer
+    )
+
+    # This endpoint supports partial updates only. A role change should be an
+    # explicit PATCH operation rather than replacing the entire profile.
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        UserProfile.objects
+        .select_related(
+            "user",
+        )
+    )
+
+    lookup_field = "user_id"
+    lookup_url_kwarg = "user_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENT LIST AND CREATE
+# =============================================================================
+# GET  /api/accounts/admin/manager-assignments/
+# POST /api/accounts/admin/manager-assignments/
+#
+# GET returns the complete assignment history, including inactive records.
+# POST creates a new relationship between a Restaurant Manager and restaurant.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentListCreateView(
+    generics.ListCreateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    def get_queryset(self):
+
+        return (
+            RestaurantManagerAssignment.objects
+            .select_related(
+                "user",
+                "user__profile",
+                "restaurant",
+                "assigned_by",
+            )
+            .order_by(
+                "-assigned_at",
+            )
+        )
+
+    def get_serializer_class(self):
+
+        if self.request.method == "POST":
+            return (
+                PlatformAdminManagerAssignmentCreateSerializer
+            )
+
+        return PlatformAdminManagerAssignmentSerializer
+
+
+# =============================================================================
+# PLATFORM ADMIN MANAGER ASSIGNMENT STATUS
+# =============================================================================
+# PATCH /api/accounts/admin/manager-assignments/<assignment_id>/
+#
+# Assignments are activated or deactivated instead of deleted. This preserves
+# their history and prevents accidental destructive operations.
+# =============================================================================
+
+class PlatformAdminManagerAssignmentStatusView(
+    generics.UpdateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminManagerAssignmentStatusSerializer
+    )
+
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        RestaurantManagerAssignment.objects
+        .select_related(
+            "user",
+            "user__profile",
+            "restaurant",
+        )
+    )
+
+    lookup_field = "id"
+    lookup_url_kwarg = "assignment_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN ACCOUNT STATUS UPDATE
+# =============================================================================
+# PATCH /api/accounts/admin/users/<user_id>/status/
+#
+# This endpoint suspends or reactivates a Django user account. Suspension also
+# deactivates restaurant assignments through the serializer's atomic update.
+# =============================================================================
+
+class PlatformAdminAccountStatusView(
+    generics.UpdateAPIView
+):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    serializer_class = (
+        PlatformAdminAccountStatusSerializer
+    )
+
+    http_method_names = [
+        "patch",
+        "options",
+    ]
+
+    queryset = (
+        User.objects
+        .select_related(
+            "profile",
+        )
+    )
+
+    lookup_field = "id"
+    lookup_url_kwarg = "user_id"
+
+
+# =============================================================================
+# PLATFORM ADMIN DASHBOARD SUMMARY
+# =============================================================================
+# GET /api/accounts/admin/dashboard/
+#
+# The six values map naturally to dashboard summary cards while remaining
+# grounded in models that already exist. Approval and payment metrics will be
+# added only after those domain models are designed and migrated.
+# =============================================================================
+
+class PlatformAdminDashboardView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsPlatformAdmin,
+    ]
+
+    def get(self, request):
+
+        restaurant_counts = Restaurant.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            active=Count(
+                "id",
+                filter=Q(
+                    is_active=True,
+                ),
+            ),
+        )
+
+        user_counts = User.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            active=Count(
+                "id",
+                filter=Q(
+                    is_active=True,
+                ),
+            ),
+        )
+
+        booking_counts = Booking.objects.aggregate(
+            total=Count(
+                "id",
+            ),
+            pending=Count(
+                "id",
+                filter=Q(
+                    status="PENDING",
+                ),
+            ),
+        )
+
+        serializer = PlatformAdminDashboardSerializer(
+            {
+                "total_restaurants": (
+                    restaurant_counts["total"]
+                ),
+                "active_restaurants": (
+                    restaurant_counts["active"]
+                ),
+                "total_users": user_counts["total"],
+                "active_users": user_counts["active"],
+                "total_bookings": booking_counts["total"],
+                "pending_bookings": booking_counts["pending"],
+            }
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
         )
