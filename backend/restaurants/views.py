@@ -1865,3 +1865,87 @@ class ManagerReservationDetailAPIView(APIView):
             serializer.data,
             status=status.HTTP_200_OK,
         )
+
+    # =============================================================================
+# MANAGER DASHBOARD
+# =============================================================================
+# GET /api/manager/dashboard/
+#
+# Returns summary counts only for restaurants actively assigned
+# to the authenticated Restaurant Manager.
+# =============================================================================
+
+class ManagerDashboardAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        today = date.today()
+
+        reservations = Booking.objects.filter(
+            branch__restaurant_id__in=restaurant_ids,
+        )
+
+        branches = Branch.objects.filter(
+            restaurant_id__in=restaurant_ids,
+        )
+
+        tables = RestaurantTable.objects.filter(
+            branch__restaurant_id__in=restaurant_ids,
+        )
+
+        menu_items = FoodItem.objects.filter(
+            restaurant_id__in=restaurant_ids,
+        )
+
+        data = {
+            'restaurants': restaurant_ids.count(),
+
+            'reservations': {
+                'total': reservations.count(),
+                'today': reservations.filter(
+                    reservation_date=today,
+                ).count(),
+                'upcoming': reservations.filter(
+                    reservation_date__gt=today,
+                ).count(),
+                'pending': reservations.filter(
+                    status='PENDING',
+                ).count(),
+            },
+
+            'branches': {
+                'total': branches.count(),
+                'active': branches.filter(
+                    is_active=True,
+                ).count(),
+            },
+
+            'tables': {
+                'total': tables.count(),
+                'active': tables.filter(
+                    is_active=True,
+                ).count(),
+            },
+
+            'menu_items': {
+                'total': menu_items.count(),
+                'available': menu_items.filter(
+                    is_available=True,
+                ).count(),
+            },
+        }
+
+        return Response(
+            data,
+            status=status.HTTP_200_OK,
+        )

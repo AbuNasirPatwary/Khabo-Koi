@@ -2341,3 +2341,299 @@ class ManagerReservationAPITests(APITestCase):
             response.status_code,
             status.HTTP_404_NOT_FOUND,
         )
+
+class ManagerDashboardAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.url = reverse(
+            'manager-dashboard'
+        )
+
+        self.restaurant = Restaurant.objects.create(
+            name='Dashboard Restaurant',
+            cuisine='Test Cuisine',
+        )
+
+        self.other_restaurant = Restaurant.objects.create(
+            name='Other Dashboard Restaurant',
+            cuisine='Other Cuisine',
+        )
+
+        self.branch = Branch.objects.create(
+            restaurant=self.restaurant,
+            name='Main Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+            is_active=True,
+        )
+
+        self.other_branch = Branch.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+            is_active=True,
+        )
+
+        self.table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='D1',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        self.other_table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='D2',
+            capacity=4,
+            seating_type='INDOOR',
+            is_active=True,
+        )
+
+        FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Manager Food',
+            category='Main',
+            price=300,
+            is_available=True,
+        )
+
+        FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Food',
+            category='Main',
+            price=400,
+            is_available=True,
+        )
+
+        self.manager = User.objects.create_user(
+            username='dashboard_manager_test',
+            password='testpass123',
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+        self.manager.profile.save()
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            is_active=True,
+        )
+
+        self.customer = User.objects.create_user(
+            username='dashboard_customer_test',
+            password='testpass123',
+        )
+
+        Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today(),
+            start_time=time(18, 0),
+            end_time=time(19, 30),
+            guest_count=2,
+            customer_name='Dashboard Customer',
+            customer_phone='01700000000',
+            status='PENDING',
+        )
+
+        Booking.objects.create(
+            user=self.customer,
+            branch=self.other_branch,
+            table=self.other_table,
+            reservation_date=date.today(),
+            start_time=time(18, 0),
+            end_time=time(19, 30),
+            guest_count=2,
+            customer_name='Other Customer',
+            customer_phone='01800000000',
+            status='PENDING',
+        )
+
+    def test_dashboard_counts_only_managed_restaurant_data(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data['restaurants'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['reservations']['total'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['reservations']['today'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['reservations']['pending'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['branches']['total'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['tables']['total'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['menu_items']['total'],
+            1,
+        )
+
+
+    def test_dashboard_anonymous_user_receives_401(self):
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_dashboard_customer_receives_403(self):
+
+        refresh = RefreshToken.for_user(
+            self.customer
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_dashboard_active_available_and_upcoming_counts(self):
+
+        Branch.objects.create(
+            restaurant=self.restaurant,
+            name='Inactive Branch',
+            address='Dhaka',
+            phone='01911111111',
+            opening_time='09:00',
+            closing_time='22:00',
+            is_active=False,
+        )
+
+        RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='D3',
+            capacity=4,
+            seating_type='WINDOW',
+            is_active=False,
+        )
+
+        FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Unavailable Food',
+            category='Main',
+            price=250,
+            is_available=False,
+        )
+
+        Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today() + timedelta(days=1),
+            start_time=time(16, 0),
+            end_time=time(17, 30),
+            guest_count=2,
+            customer_name='Future Customer',
+            customer_phone='01922222222',
+            status='CONFIRMED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data['reservations']['upcoming'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['branches']['total'],
+            2,
+        )
+
+        self.assertEqual(
+            response.data['branches']['active'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['tables']['total'],
+            2,
+        )
+
+        self.assertEqual(
+            response.data['tables']['active'],
+            1,
+        )
+
+        self.assertEqual(
+            response.data['menu_items']['total'],
+            2,
+        )
+
+        self.assertEqual(
+            response.data['menu_items']['available'],
+            1,
+        )

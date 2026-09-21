@@ -16,6 +16,7 @@ from .views import (
     ManagerTableDetailAPIView,
     ManagerReservationListAPIView,
     ManagerReservationDetailAPIView,
+    ManagerDashboardAPIView,
 )
 
 
@@ -115,6 +116,12 @@ urlpatterns = [
         'manager/reservations/<int:pk>/',
         ManagerReservationDetailAPIView.as_view(),
         name='manager-reservation-detail',
+    ),
+
+    path(
+            'manager/dashboard/',
+        ManagerDashboardAPIView.as_view(),
+        name='manager-dashboard',
     ),
 
 ]
