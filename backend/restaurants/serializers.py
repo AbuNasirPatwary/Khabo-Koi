@@ -323,3 +323,56 @@ class ManagerRestaurantTableSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+    # =============================================================================
+# MANAGER RESERVATION
+# =============================================================================
+# Read serializer for reservations belonging to the Manager's restaurants.
+# Reservation ownership is enforced in the Manager API views.
+# =============================================================================
+
+class ManagerReservationSerializer(serializers.ModelSerializer):
+
+    restaurant_id = serializers.IntegerField(
+        source='branch.restaurant.id',
+        read_only=True,
+    )
+
+    restaurant_name = serializers.CharField(
+        source='branch.restaurant.name',
+        read_only=True,
+    )
+
+    branch_name = serializers.CharField(
+        source='branch.name',
+        read_only=True,
+    )
+
+    table_number = serializers.CharField(
+        source='table.table_number',
+        read_only=True,
+    )
+
+    class Meta:
+        model = Booking
+
+        fields = [
+            'id',
+            'user',
+            'restaurant_id',
+            'restaurant_name',
+            'branch',
+            'branch_name',
+            'table',
+            'table_number',
+            'reservation_date',
+            'start_time',
+            'end_time',
+            'guest_count',
+            'customer_name',
+            'customer_phone',
+            'status',
+            'created_at',
+        ]
+
+        read_only_fields = fields

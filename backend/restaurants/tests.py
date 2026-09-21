@@ -1,3 +1,4 @@
+from datetime import date, timedelta, time
 from django.contrib.auth.models import User
 from django.urls import reverse
 
@@ -15,6 +16,7 @@ from .models import (
     Branch,
     FoodItem,
     RestaurantTable,
+    Booking,
 )
 
 
@@ -1822,4 +1824,520 @@ class ManagerTableAPITests(APITestCase):
         self.assertNotEqual(
             table.branch,
             self.other_branch,
+        )
+
+class ManagerReservationAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.url = reverse(
+            'manager-reservation-list'
+        )
+
+        self.restaurant = Restaurant.objects.create(
+            name='Reservation Restaurant',
+            cuisine='Test Cuisine',
+        )
+
+        self.other_restaurant = Restaurant.objects.create(
+            name='Other Reservation Restaurant',
+            cuisine='Other Cuisine',
+        )
+
+        self.branch = Branch.objects.create(
+            restaurant=self.restaurant,
+            name='Main Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+        )
+
+        self.other_branch = Branch.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Branch',
+            address='Dhaka',
+            phone='0123456789',
+            opening_time='09:00',
+            closing_time='22:00',
+        )
+
+        self.table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='R1',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        self.other_table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number='R2',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        self.manager = User.objects.create_user(
+            username='reservation_manager_test',
+            password='testpass123',
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+        self.manager.profile.save()
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            is_active=True,
+        )
+
+        self.customer = User.objects.create_user(
+            username='reservation_customer_test',
+            password='testpass123',
+        )
+
+        self.own_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today(),
+            start_time=time(18, 0),
+            end_time=time(19, 30),
+            guest_count=2,
+            customer_name='Rakibul Customer',
+            customer_phone='01700000000',
+            status='CONFIRMED',
+        )
+
+        self.other_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.other_branch,
+            table=self.other_table,
+            reservation_date=date.today(),
+            start_time=time(19, 0),
+            end_time=time(20, 30),
+            guest_count=2,
+            customer_name='Other Customer',
+            customer_phone='01800000000',
+            status='CONFIRMED',
+        )
+
+    def test_manager_sees_only_owned_restaurant_reservations(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            self.own_booking.id,
+        )
+
+
+    def test_anonymous_user_receives_401(self):
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_customer_receives_403(self):
+
+        refresh = RefreshToken.for_user(
+            self.customer
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_manager_can_filter_reservations_by_status(self):
+
+        pending_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today() + timedelta(days=1),
+            start_time=time(16, 0),
+            end_time=time(17, 30),
+            guest_count=3,
+            customer_name='Pending Customer',
+            customer_phone='01900000000',
+            status='PENDING',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'status': 'PENDING',
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            pending_booking.id,
+        )
+
+
+    def test_manager_can_filter_reservations_by_date(self):
+
+        tomorrow = date.today() + timedelta(days=1)
+
+        tomorrow_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=tomorrow,
+            start_time=time(17, 0),
+            end_time=time(18, 30),
+            guest_count=2,
+            customer_name='Tomorrow Customer',
+            customer_phone='01600000000',
+            status='CONFIRMED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'date': tomorrow.isoformat(),
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            tomorrow_booking.id,
+        )
+
+
+    def test_manager_can_search_reservations_by_customer(self):
+
+        searched_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today() + timedelta(days=2),
+            start_time=time(15, 0),
+            end_time=time(16, 30),
+            guest_count=4,
+            customer_name='Special Search Name',
+            customer_phone='01512345678',
+            status='CONFIRMED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'search': 'Special Search',
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            searched_booking.id,
+        )
+
+    def test_manager_can_filter_reservations_by_branch(self):
+
+        second_branch = Branch.objects.create(
+            restaurant=self.restaurant,
+            name='Second Branch',
+            address='Dhaka',
+            phone='01300000000',
+            opening_time='09:00',
+            closing_time='22:00',
+        )
+
+        second_table = RestaurantTable.objects.create(
+            branch=second_branch,
+            table_number='R3',
+            capacity=4,
+            seating_type='INDOOR',
+        )
+
+        branch_booking = Booking.objects.create(
+            user=self.customer,
+            branch=second_branch,
+            table=second_table,
+            reservation_date=date.today(),
+            start_time=time(16, 0),
+            end_time=time(17, 30),
+            guest_count=2,
+            customer_name='Branch Customer',
+            customer_phone='01400000000',
+            status='CONFIRMED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'branch': second_branch.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            branch_booking.id,
+        )
+
+
+    def test_manager_can_filter_reservations_by_table(self):
+
+        second_table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number='R4',
+            capacity=6,
+            seating_type='WINDOW',
+        )
+
+        table_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=second_table,
+            reservation_date=date.today(),
+            start_time=time(15, 0),
+            end_time=time(16, 30),
+            guest_count=3,
+            customer_name='Table Customer',
+            customer_phone='01312345678',
+            status='CONFIRMED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'table': second_table.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            table_booking.id,
+        )
+
+
+    def test_manager_can_filter_reservations_by_scope(self):
+
+        past_booking = Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today() - timedelta(days=1),
+            start_time=time(14, 0),
+            end_time=time(15, 30),
+            guest_count=2,
+            customer_name='Past Customer',
+            customer_phone='01200000000',
+            status='COMPLETED',
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                'scope': 'history',
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            past_booking.id,
+        )
+
+    def test_manager_can_get_own_reservation_detail(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-detail',
+            args=[self.own_booking.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data['id'],
+            self.own_booking.id,
+        )
+
+        self.assertEqual(
+            response.data['restaurant_id'],
+            self.restaurant.id,
+        )
+
+
+    def test_manager_cannot_get_unassigned_reservation_detail(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-detail',
+            args=[self.other_booking.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
         )

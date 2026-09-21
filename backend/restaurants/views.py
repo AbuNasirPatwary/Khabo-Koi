@@ -1,5 +1,6 @@
 
 from datetime import datetime, timedelta
+from datetime import date
 
 from django.db import transaction
 from django.db.models import Q
@@ -37,6 +38,7 @@ from .serializers import (
     ManagerBranchSerializer,
     ManagerFoodItemSerializer,
     ManagerRestaurantTableSerializer,
+    ManagerReservationSerializer,
 )
 
 
@@ -1573,5 +1575,293 @@ class ManagerTableDetailAPIView(APIView):
                 'message':
                     'Table deactivated successfully.'
             },
+            status=status.HTTP_200_OK,
+        )
+    # =============================================================================
+# MANAGER RESERVATION LIST
+# =============================================================================
+# GET /api/manager/reservations/
+#
+# Optional filters:
+#   ?status=CONFIRMED
+#   ?date=2026-09-21
+#   ?branch=1
+#   ?table=3
+#   ?search=Rakibul
+#   ?scope=today
+#   ?scope=upcoming
+#   ?scope=history
+# =============================================================================
+
+class ManagerReservationListAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        bookings = (
+            Booking.objects
+            .filter(
+                branch__restaurant_id__in=restaurant_ids,
+            )
+            .select_related(
+                'user',
+                'branch',
+                'branch__restaurant',
+                'table',
+            )
+        )
+
+        # -------------------------------------------------------------
+        # Status filter
+        # -------------------------------------------------------------
+        reservation_status = request.query_params.get(
+            'status'
+        )
+
+        if reservation_status:
+
+            valid_statuses = [
+                choice[0]
+                for choice in Booking._meta.get_field('status').choices
+                ]
+            if reservation_status not in valid_statuses:
+
+                return Response(
+                    {
+                        'error': 'Invalid reservation status.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            bookings = bookings.filter(
+                status=reservation_status
+            )
+
+        # -------------------------------------------------------------
+        # Exact date filter
+        # -------------------------------------------------------------
+        reservation_date = request.query_params.get(
+            'date'
+        )
+
+        if reservation_date:
+
+            try:
+                parsed_date = date.fromisoformat(
+                    reservation_date
+                )
+
+            except ValueError:
+
+                return Response(
+                    {
+                        'error':
+                            'date must use YYYY-MM-DD format.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            bookings = bookings.filter(
+                reservation_date=parsed_date
+            )
+
+        # -------------------------------------------------------------
+        # Branch filter
+        # -------------------------------------------------------------
+        branch_id = request.query_params.get(
+            'branch'
+        )
+
+        if branch_id:
+
+            try:
+                branch_id = int(
+                    branch_id
+                )
+
+            except (TypeError, ValueError):
+
+                return Response(
+                    {
+                        'error': 'branch must be a valid number.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            bookings = bookings.filter(
+                branch_id=branch_id
+            )
+
+        # -------------------------------------------------------------
+        # Table filter
+        # -------------------------------------------------------------
+        table_id = request.query_params.get(
+            'table'
+        )
+
+        if table_id:
+
+            try:
+                table_id = int(
+                    table_id
+                )
+
+            except (TypeError, ValueError):
+
+                return Response(
+                    {
+                        'error': 'table must be a valid number.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            bookings = bookings.filter(
+                table_id=table_id
+            )
+
+        # -------------------------------------------------------------
+        # Customer search
+        # -------------------------------------------------------------
+        search = request.query_params.get(
+            'search'
+        )
+
+        if search:
+
+            bookings = bookings.filter(
+                Q(
+                    customer_name__icontains=search
+                )
+                |
+                Q(
+                    customer_phone__icontains=search
+                )
+            )
+
+        # -------------------------------------------------------------
+        # Today / upcoming / history
+        # -------------------------------------------------------------
+        scope = request.query_params.get(
+            'scope'
+        )
+
+        today = date.today()
+
+        if scope == 'today':
+
+            bookings = bookings.filter(
+                reservation_date=today
+            )
+
+        elif scope == 'upcoming':
+
+            bookings = bookings.filter(
+                reservation_date__gte=today
+            )
+
+        elif scope == 'history':
+
+            bookings = bookings.filter(
+                reservation_date__lt=today
+            )
+
+        elif scope:
+
+            return Response(
+                {
+                    'error':
+                        'scope must be today, upcoming, or history.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        bookings = bookings.order_by(
+            '-reservation_date',
+            '-start_time',
+        )
+
+        serializer = ManagerReservationSerializer(
+            bookings,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    # =============================================================================
+# MANAGER RESERVATION DETAIL
+# =============================================================================
+# GET /api/manager/reservations/<id>/
+#
+# A Manager may only view reservations that belong to restaurants
+# they are actively assigned to.
+# =============================================================================
+
+class ManagerReservationDetailAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get_booking(self, request, pk):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        try:
+            return (
+                Booking.objects
+                .select_related(
+                    'user',
+                    'branch',
+                    'branch__restaurant',
+                    'table',
+                )
+                .get(
+                    id=pk,
+                    branch__restaurant_id__in=restaurant_ids,
+                )
+            )
+
+        except Booking.DoesNotExist:
+            return None
+
+
+    def get(self, request, pk):
+
+        booking = self.get_booking(
+            request,
+            pk,
+        )
+
+        if booking is None:
+
+            return Response(
+                {
+                    'error': 'Reservation not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerReservationSerializer(
+            booking
+        )
+
+        return Response(
+            serializer.data,
             status=status.HTTP_200_OK,
         )
