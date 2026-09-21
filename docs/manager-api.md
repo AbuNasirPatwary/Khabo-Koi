@@ -271,15 +271,52 @@ Another restaurant's reservation returns 404.
 
 # Reservation Status Update
 
-Manager reservation status updating is not finalized yet.
+PATCH /api/manager/reservations/<id>/status/
 
-The allowed transitions between:
-- PENDING
-- CONFIRMED
-- CANCELLED
-- COMPLETED
+Updates the status of a reservation belonging to the Manager's restaurant.
 
-must be confirmed with the shared backend team before implementation.
+Example request:
+
+{
+  "status": "CONFIRMED"
+}
+
+Allowed transitions:
+
+PENDING -> CONFIRMED
+PENDING -> CANCELLED
+
+CONFIRMED -> COMPLETED
+CONFIRMED -> CANCELLED
+
+CANCELLED -> no further status changes
+COMPLETED -> no further status changes
+
+Updating a reservation to its current status is allowed and returns success
+as an idempotent no-op.
+
+Rejected examples:
+
+PENDING -> COMPLETED
+CONFIRMED -> PENDING
+CANCELLED -> PENDING
+CANCELLED -> CONFIRMED
+CANCELLED -> COMPLETED
+COMPLETED -> PENDING
+COMPLETED -> CONFIRMED
+COMPLETED -> CANCELLED
+
+Missing status returns 400.
+
+Invalid status returns 400.
+
+Another restaurant's reservation returns 404.
+
+Anonymous users receive 401.
+
+Customers and other unauthorized roles receive 403.
+
+Managers without an active restaurant assignment receive 403.
 
 
 # API Summary
@@ -308,11 +345,12 @@ DELETE /api/manager/tables/<id>/
 
 GET    /api/manager/reservations/
 GET    /api/manager/reservations/<id>/
+PATCH  /api/manager/reservations/<id>/status/
 
 
 # Current Test Status
 
-61 Restaurant Manager backend tests passing.
+69 Restaurant Manager backend tests passing.
 
 Covered:
 - Restaurant Profile

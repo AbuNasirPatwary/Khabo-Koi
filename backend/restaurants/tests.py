@@ -2342,6 +2342,341 @@ class ManagerReservationAPITests(APITestCase):
             status.HTTP_404_NOT_FOUND,
         )
 
+    def create_owned_booking_with_status(self, booking_status):
+
+        return Booking.objects.create(
+            user=self.customer,
+            branch=self.branch,
+            table=self.table,
+            reservation_date=date.today() + timedelta(days=5),
+            start_time=time(12, 0),
+            end_time=time(13, 30),
+            guest_count=2,
+            customer_name='Transition Customer',
+            customer_phone='01711111111',
+            status=booking_status,
+        )
+
+    def test_all_allowed_reservation_status_transitions(self):
+
+        allowed_transitions = [
+            ('PENDING', 'PENDING'),
+            ('PENDING', 'CONFIRMED'),
+            ('PENDING', 'CANCELLED'),
+
+            ('CONFIRMED', 'CONFIRMED'),
+            ('CONFIRMED', 'COMPLETED'),
+            ('CONFIRMED', 'CANCELLED'),
+
+            ('CANCELLED', 'CANCELLED'),
+
+            ('COMPLETED', 'COMPLETED'),
+        ]
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        for current_status, new_status in allowed_transitions:
+
+            with self.subTest(
+                current_status=current_status,
+                new_status=new_status,
+            ):
+
+                booking = self.create_owned_booking_with_status(
+                    current_status
+                )
+
+                url = reverse(
+                    'manager-reservation-status',
+                    args=[booking.id],
+                )
+
+                response = self.client.patch(
+                    url,
+                    {
+                        'status': new_status,
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_200_OK,
+                )
+
+                booking.refresh_from_db()
+
+                self.assertEqual(
+                    booking.status,
+                    new_status,
+                )
+
+    def test_all_rejected_reservation_status_transitions(self):
+
+        rejected_transitions = [
+            ('PENDING', 'COMPLETED'),
+
+            ('CONFIRMED', 'PENDING'),
+
+            ('CANCELLED', 'PENDING'),
+            ('CANCELLED', 'CONFIRMED'),
+            ('CANCELLED', 'COMPLETED'),
+
+            ('COMPLETED', 'PENDING'),
+            ('COMPLETED', 'CONFIRMED'),
+            ('COMPLETED', 'CANCELLED'),
+        ]
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        for current_status, new_status in rejected_transitions:
+
+            with self.subTest(
+                current_status=current_status,
+                new_status=new_status,
+            ):
+
+                booking = self.create_owned_booking_with_status(
+                    current_status
+                )
+
+                url = reverse(
+                    'manager-reservation-status',
+                    args=[booking.id],
+                )
+
+                response = self.client.patch(
+                    url,
+                    {
+                        'status': new_status,
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(
+                    response.status_code,
+                    status.HTTP_400_BAD_REQUEST,
+                )
+
+                booking.refresh_from_db()
+
+                # Rejected transition must not modify the booking.
+                self.assertEqual(
+                    booking.status,
+                    current_status,
+                )
+
+    def test_reservation_status_is_required(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.own_booking.id],
+        )
+
+        original_status = self.own_booking.status
+
+        response = self.client.patch(
+            url,
+            {},
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.own_booking.refresh_from_db()
+
+        self.assertEqual(
+            self.own_booking.status,
+            original_status,
+        )
+
+
+    def test_invalid_reservation_status_is_rejected(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.own_booking.id],
+        )
+
+        original_status = self.own_booking.status
+
+        response = self.client.patch(
+            url,
+            {
+                'status': 'INVALID_STATUS',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.own_booking.refresh_from_db()
+
+        self.assertEqual(
+            self.own_booking.status,
+            original_status,
+        )
+
+
+    def test_anonymous_user_cannot_update_reservation_status(self):
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.own_booking.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'status': 'COMPLETED',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_customer_cannot_update_reservation_status(self):
+
+        refresh = RefreshToken.for_user(
+            self.customer
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.own_booking.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'status': 'COMPLETED',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+    def test_manager_with_inactive_assignment_cannot_update_status(self):
+
+        assignment = RestaurantManagerAssignment.objects.get(
+            user=self.manager,
+            restaurant=self.restaurant,
+        )
+
+        assignment.is_active = False
+        assignment.save(
+            update_fields=['is_active']
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.own_booking.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'status': 'COMPLETED',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_manager_cannot_update_other_restaurant_reservation_status(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-reservation-status',
+            args=[self.other_booking.id],
+        )
+
+        original_status = self.other_booking.status
+
+        response = self.client.patch(
+            url,
+            {
+                'status': 'COMPLETED',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.other_booking.refresh_from_db()
+
+        self.assertEqual(
+            self.other_booking.status,
+            original_status,
+        )
+
 class ManagerDashboardAPITests(APITestCase):
 
     def setUp(self):

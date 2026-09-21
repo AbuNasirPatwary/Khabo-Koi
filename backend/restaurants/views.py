@@ -1866,6 +1866,154 @@ class ManagerReservationDetailAPIView(APIView):
             status=status.HTTP_200_OK,
         )
 
+
+# =============================================================================
+# MANAGER RESERVATION STATUS UPDATE
+# =============================================================================
+# PATCH /api/manager/reservations/<id>/status/
+#
+# Allowed transitions:
+# PENDING   -> CONFIRMED, CANCELLED
+# CONFIRMED -> COMPLETED, CANCELLED
+# CANCELLED -> no new status
+# COMPLETED -> no new status
+#
+# Updating to the current status is allowed as an idempotent no-op.
+# =============================================================================
+
+class ManagerReservationStatusAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    ALLOWED_TRANSITIONS = {
+        'PENDING': {
+            'PENDING',
+            'CONFIRMED',
+            'CANCELLED',
+        },
+        'CONFIRMED': {
+            'CONFIRMED',
+            'COMPLETED',
+            'CANCELLED',
+        },
+        'CANCELLED': {
+            'CANCELLED',
+        },
+        'COMPLETED': {
+            'COMPLETED',
+        },
+    }
+
+    def get_booking(self, request, pk):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        try:
+            return (
+                Booking.objects
+                .select_related(
+                    'user',
+                    'branch',
+                    'branch__restaurant',
+                    'table',
+                )
+                .get(
+                    id=pk,
+                    branch__restaurant_id__in=restaurant_ids,
+                )
+            )
+
+        except Booking.DoesNotExist:
+            return None
+
+
+    def patch(self, request, pk):
+
+        booking = self.get_booking(
+            request,
+            pk,
+        )
+
+        if booking is None:
+
+            return Response(
+                {
+                    'error': 'Reservation not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get(
+            'status'
+        )
+
+        if new_status is None:
+
+            return Response(
+                {
+                    'error': 'status is required.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valid_statuses = [
+            choice[0]
+            for choice in Booking._meta.get_field(
+                'status'
+            ).choices
+        ]
+
+        if new_status not in valid_statuses:
+
+            return Response(
+                {
+                    'error': 'Invalid reservation status.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        allowed_statuses = self.ALLOWED_TRANSITIONS.get(
+            booking.status,
+            set(),
+        )
+
+        if new_status not in allowed_statuses:
+
+            return Response(
+                {
+                    'error':
+                        f'Cannot change reservation status '
+                        f'from {booking.status} to {new_status}.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Idempotent no-op is allowed.
+        if booking.status != new_status:
+
+            booking.status = new_status
+
+            booking.save(
+                update_fields=[
+                    'status',
+                ]
+            )
+
+        serializer = ManagerReservationSerializer(
+            booking
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
     # =============================================================================
 # MANAGER DASHBOARD
 # =============================================================================
