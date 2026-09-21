@@ -13,6 +13,7 @@ from accounts.models import (
 from .models import (
     Restaurant,
     Branch,
+    FoodItem,
 )
 
 
@@ -678,4 +679,484 @@ class ManagerBranchAPITests(APITestCase):
 
         self.assertTrue(
             branch.is_active
+        )
+
+class ManagerMenuAPITests(APITestCase):
+
+    def setUp(self):
+
+        self.url = reverse(
+            'manager-menu-list-create'
+        )
+
+        self.restaurant = Restaurant.objects.create(
+            name='Menu Restaurant',
+            cuisine='Test Cuisine',
+        )
+
+        self.other_restaurant = Restaurant.objects.create(
+            name='Other Menu Restaurant',
+            cuisine='Other Cuisine',
+        )
+
+        self.manager = User.objects.create_user(
+            username='menu_manager_test',
+            password='testpass123',
+        )
+
+        self.manager.profile.role = (
+            UserProfile.Role.RESTAURANT_MANAGER
+        )
+        self.manager.profile.save()
+
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            is_active=True,
+        )
+
+        self.customer = User.objects.create_user(
+            username='menu_customer_test',
+            password='testpass123',
+        )
+
+    def test_manager_sees_only_assigned_restaurant_menu_items(self):
+
+        own_item = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Own Burger',
+            category='Burger',
+            description='Own item',
+            price=250,
+            rating=4.5,
+            is_available=True,
+        )
+
+        FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Burger',
+            category='Burger',
+            description='Other item',
+            price=300,
+            rating=4.0,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            1,
+        )
+
+        self.assertEqual(
+            response.data[0]['id'],
+            own_item.id,
+        )
+
+        self.assertEqual(
+            response.data[0]['restaurant'],
+            self.restaurant.id,
+        )
+
+    def test_manager_can_create_menu_item_for_assigned_restaurant(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'name': 'Chicken Burger',
+                'category': 'Burger',
+                'description': 'Grilled chicken burger',
+                'price': '350.00',
+                'image_url': 'https://example.com/burger.jpg',
+                'is_available': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        item = FoodItem.objects.get(
+            name='Chicken Burger'
+        )
+
+        self.assertEqual(
+            item.restaurant,
+            self.restaurant,
+        )
+
+        self.assertEqual(
+            item.price,
+            350,
+        )
+
+
+    def test_manager_cannot_create_menu_item_for_unassigned_restaurant(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'restaurant_id': self.other_restaurant.id,
+                'name': 'Unauthorized Item',
+                'category': 'Burger',
+                'description': 'Should not be created',
+                'price': '400.00',
+                'is_available': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.assertFalse(
+            FoodItem.objects.filter(
+                name='Unauthorized Item'
+            ).exists()
+        )
+
+    def test_negative_menu_price_is_rejected(self):
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                'name': 'Invalid Item',
+                'category': 'Test',
+                'description': 'Invalid price',
+                'price': '-50.00',
+                'is_available': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            FoodItem.objects.filter(
+                name='Invalid Item'
+            ).exists()
+        )
+
+    def test_anonymous_user_receives_401(self):
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_customer_receives_403(self):
+
+        refresh = RefreshToken.for_user(
+            self.customer
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_manager_can_get_own_menu_item_detail(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Own Item',
+            category='Burger',
+            price=250,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data['id'],
+            item.id,
+        )
+
+
+    def test_manager_cannot_get_unassigned_menu_item(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Item',
+            category='Burger',
+            price=300,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.get(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_manager_can_update_own_menu_item(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Old Item',
+            category='Burger',
+            price=250,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'name': 'Updated Item',
+                'category': 'Updated Category',
+                'price': '299.00',
+                'is_available': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        item.refresh_from_db()
+
+        self.assertEqual(
+            item.name,
+            'Updated Item',
+        )
+
+        self.assertEqual(
+            item.price,
+            299,
+        )
+
+    def test_manager_cannot_update_unassigned_menu_item(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Item',
+            category='Burger',
+            price=300,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                'name': 'Should Not Change',
+            },
+            format='json',
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        item.refresh_from_db()
+
+        self.assertEqual(
+            item.name,
+            'Other Item',
+        )
+
+    def test_manager_can_deactivate_own_menu_item(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name='Active Item',
+            category='Burger',
+            price=250,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.delete(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        item.refresh_from_db()
+
+        self.assertFalse(
+            item.is_available
+        )
+
+        self.assertTrue(
+            FoodItem.objects.filter(
+                id=item.id
+            ).exists()
+        )
+
+    def test_manager_cannot_deactivate_unassigned_menu_item(self):
+
+        item = FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name='Other Active Item',
+            category='Burger',
+            price=300,
+            is_available=True,
+        )
+
+        refresh = RefreshToken.for_user(
+            self.manager
+        )
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+        )
+
+        url = reverse(
+            'manager-menu-detail',
+            args=[item.id],
+        )
+
+        response = self.client.delete(
+            url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        item.refresh_from_db()
+
+        self.assertTrue(
+            item.is_available
         )

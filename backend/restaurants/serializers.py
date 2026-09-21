@@ -226,3 +226,51 @@ class ManagerBranchSerializer(serializers.ModelSerializer):
             'restaurant',
             'restaurant_name',
         ]
+
+# =============================================================================
+# MANAGER MENU ITEM
+# =============================================================================
+# Menu items managed by an authenticated Restaurant Manager.
+#
+# Restaurant ownership is decided by the backend view. Managers cannot freely
+# assign an item to another restaurant.
+# =============================================================================
+
+class ManagerFoodItemSerializer(serializers.ModelSerializer):
+
+    restaurant_name = serializers.CharField(
+        source='restaurant.name',
+        read_only=True,
+    )
+
+    class Meta:
+        model = FoodItem
+
+        fields = [
+            'id',
+            'restaurant',
+            'restaurant_name',
+            'name',
+            'category',
+            'description',
+            'price',
+            'rating',
+            'image_url',
+            'is_available',
+        ]
+
+        read_only_fields = [
+            'id',
+            'restaurant',
+            'restaurant_name',
+            'rating',
+        ]
+
+    def validate_price(self, value):
+
+        if value < 0:
+            raise serializers.ValidationError(
+                'Price cannot be negative.'
+            )
+
+        return value

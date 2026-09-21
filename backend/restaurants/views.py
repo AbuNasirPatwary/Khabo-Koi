@@ -35,6 +35,7 @@ from .serializers import (
     BookingSerializer,
     ManagerRestaurantSerializer,
     ManagerBranchSerializer,
+    ManagerFoodItemSerializer,
 )
 
 
@@ -1001,6 +1002,263 @@ class ManagerBranchDetailAPIView(APIView):
         return Response(
             {
                 'message': 'Branch deactivated successfully.'
+            },
+            status=status.HTTP_200_OK,
+        )
+
+# =============================================================================
+# MANAGER MENU LIST + CREATE
+# =============================================================================
+# GET  /api/manager/menu/
+# POST /api/manager/menu/
+#
+# Managers may only view and create menu items for restaurants to which they
+# have an active assignment.
+# =============================================================================
+
+class ManagerMenuListCreateAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        items = (
+            FoodItem.objects
+            .filter(
+                restaurant_id__in=restaurant_ids,
+            )
+            .select_related(
+                'restaurant',
+            )
+            .order_by(
+                'restaurant__name',
+                'name',
+            )
+        )
+
+        serializer = ManagerFoodItemSerializer(
+            items,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def post(self, request):
+
+        restaurant_ids = list(
+            get_managed_restaurant_ids(
+                request.user
+            )
+        )
+
+        requested_restaurant_id = request.data.get(
+            'restaurant_id'
+        )
+
+        if requested_restaurant_id is None:
+
+            if len(restaurant_ids) != 1:
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id is required when managing multiple restaurants.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            restaurant_id = restaurant_ids[0]
+
+        else:
+
+            try:
+
+                restaurant_id = int(
+                    requested_restaurant_id
+                )
+
+            except (TypeError, ValueError):
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id must be a valid number.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+        if restaurant_id not in restaurant_ids:
+
+            return Response(
+                {
+                    'error':
+                        'Restaurant not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+        restaurant = Restaurant.objects.get(
+            id=restaurant_id
+        )
+
+
+        serializer = ManagerFoodItemSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        item = serializer.save(
+            restaurant=restaurant
+        )
+
+
+        return Response(
+            ManagerFoodItemSerializer(item).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+# =============================================================================
+# MANAGER MENU DETAIL + UPDATE + DEACTIVATE
+# =============================================================================
+# GET    /api/manager/menu/<id>/
+# PATCH  /api/manager/menu/<id>/
+# DELETE /api/manager/menu/<id>/
+#
+# DELETE performs a soft deactivation by setting is_available=False.
+# =============================================================================
+
+class ManagerMenuDetailAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get_item(self, request, pk):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        try:
+
+            return FoodItem.objects.select_related(
+                'restaurant'
+            ).get(
+                id=pk,
+                restaurant_id__in=restaurant_ids,
+            )
+
+        except FoodItem.DoesNotExist:
+
+            return None
+
+
+    def get(self, request, pk):
+
+        item = self.get_item(
+            request,
+            pk,
+        )
+
+        if item is None:
+
+            return Response(
+                {
+                    'error': 'Menu item not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerFoodItemSerializer(
+            item
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def patch(self, request, pk):
+
+        item = self.get_item(
+            request,
+            pk,
+        )
+
+        if item is None:
+
+            return Response(
+                {
+                    'error': 'Menu item not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerFoodItemSerializer(
+            item,
+            data=request.data,
+            partial=True,
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def delete(self, request, pk):
+
+        item = self.get_item(
+            request,
+            pk,
+        )
+
+        if item is None:
+
+            return Response(
+                {
+                    'error': 'Menu item not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        item.is_available = False
+        item.save(
+            update_fields=[
+                'is_available',
+            ]
+        )
+
+        return Response(
+            {
+                'message':
+                    'Menu item deactivated successfully.'
             },
             status=status.HTTP_200_OK,
         )
