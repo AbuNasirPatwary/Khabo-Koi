@@ -188,3 +188,41 @@ class ManagerRestaurantSerializer(serializers.ModelSerializer):
             'rating',
             'is_active',
         ]
+
+# =============================================================================
+# MANAGER BRANCH
+# =============================================================================
+# Branch data managed by an authenticated Restaurant Manager.
+#
+# The restaurant field is read-only because the backend view decides which
+# restaurant the Manager is allowed to manage. The browser must never freely
+# assign a branch to another restaurant.
+# =============================================================================
+
+class ManagerBranchSerializer(serializers.ModelSerializer):
+
+    restaurant_name = serializers.CharField(
+        source='restaurant.name',
+        read_only=True,
+    )
+
+    class Meta:
+        model = Branch
+
+        fields = [
+            'id',
+            'restaurant',
+            'restaurant_name',
+            'name',
+            'address',
+            'phone',
+            'opening_time',
+            'closing_time',
+            'is_active',
+        ]
+
+        read_only_fields = [
+            'id',
+            'restaurant',
+            'restaurant_name',
+        ]

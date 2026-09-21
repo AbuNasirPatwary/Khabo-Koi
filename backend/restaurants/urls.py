@@ -8,6 +8,8 @@ from .views import (
     BookingCreateAPIView,
     MyBookingsAPIView,
     ManagerRestaurantAPIView,
+    ManagerBranchListCreateAPIView,
+    ManagerBranchDetailAPIView,
 )
 
 
@@ -59,6 +61,18 @@ urlpatterns = [
         'manager/restaurant/',
         ManagerRestaurantAPIView.as_view(),
         name='manager-restaurant',
+    ),
+
+    path(
+        'manager/branches/',
+        ManagerBranchListCreateAPIView.as_view(),
+        name='manager-branch-list-create',
+    ),
+
+    path(
+        'manager/branches/<int:pk>/',
+        ManagerBranchDetailAPIView.as_view(),
+        name='manager-branch-detail',
     ),
 
 ]

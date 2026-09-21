@@ -34,6 +34,7 @@ from .serializers import (
     RestaurantTableSerializer,
     BookingSerializer,
     ManagerRestaurantSerializer,
+    ManagerBranchSerializer,
 )
 
 
@@ -742,5 +743,264 @@ class ManagerRestaurantAPIView(APIView):
 
         return Response(
             serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+# =============================================================================
+# MANAGER BRANCH LIST + CREATE
+# =============================================================================
+# GET  /api/manager/branches/
+# POST /api/manager/branches/
+#
+# Managers may only view and create branches for restaurants to which they
+# have an active assignment.
+# =============================================================================
+
+class ManagerBranchListCreateAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get(self, request):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        branches = (
+            Branch.objects
+            .filter(
+                restaurant_id__in=restaurant_ids,
+            )
+            .select_related(
+                'restaurant',
+            )
+            .order_by(
+                'restaurant__name',
+                'name',
+            )
+        )
+
+        serializer = ManagerBranchSerializer(
+            branches,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def post(self, request):
+
+        restaurant_ids = list(
+            get_managed_restaurant_ids(
+                request.user
+            )
+        )
+
+        requested_restaurant_id = request.data.get(
+            'restaurant_id'
+        )
+
+        # If the Manager controls only one restaurant,
+        # the backend can safely select it automatically.
+        if requested_restaurant_id is None:
+
+            if len(restaurant_ids) != 1:
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id is required when managing multiple restaurants.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            restaurant_id = restaurant_ids[0]
+
+        else:
+
+            try:
+
+                restaurant_id = int(
+                    requested_restaurant_id
+                )
+
+            except (TypeError, ValueError):
+
+                return Response(
+                    {
+                        'error':
+                            'restaurant_id must be a valid number.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+        # Never allow the browser to choose an unassigned restaurant.
+        if restaurant_id not in restaurant_ids:
+
+            return Response(
+                {
+                    'error':
+                        'Restaurant not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+
+        restaurant = Restaurant.objects.get(
+            id=restaurant_id
+        )
+
+
+        serializer = ManagerBranchSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        branch = serializer.save(
+            restaurant=restaurant
+        )
+
+
+        return Response(
+            ManagerBranchSerializer(branch).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    # =============================================================================
+# MANAGER BRANCH DETAIL + UPDATE + DEACTIVATE
+# =============================================================================
+# GET    /api/manager/branches/<id>/
+# PATCH  /api/manager/branches/<id>/
+# DELETE /api/manager/branches/<id>/
+#
+# DELETE performs a soft deactivation by setting is_active=False.
+# =============================================================================
+
+class ManagerBranchDetailAPIView(APIView):
+
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def get_branch(self, request, pk):
+
+        restaurant_ids = get_managed_restaurant_ids(
+            request.user
+        )
+
+        try:
+
+            return Branch.objects.select_related(
+                'restaurant'
+            ).get(
+                id=pk,
+                restaurant_id__in=restaurant_ids,
+            )
+
+        except Branch.DoesNotExist:
+
+            return None
+
+
+    def get(self, request, pk):
+
+        branch = self.get_branch(
+            request,
+            pk,
+        )
+
+        if branch is None:
+
+            return Response(
+                {
+                    'error': 'Branch not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerBranchSerializer(
+            branch
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def patch(self, request, pk):
+
+        branch = self.get_branch(
+            request,
+            pk,
+        )
+
+        if branch is None:
+
+            return Response(
+                {
+                    'error': 'Branch not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ManagerBranchSerializer(
+            branch,
+            data=request.data,
+            partial=True,
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
+    def delete(self, request, pk):
+
+        branch = self.get_branch(
+            request,
+            pk,
+        )
+
+        if branch is None:
+
+            return Response(
+                {
+                    'error': 'Branch not found.'
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        branch.is_active = False
+        branch.save(
+            update_fields=[
+                'is_active',
+            ]
+        )
+
+        return Response(
+            {
+                'message': 'Branch deactivated successfully.'
+            },
             status=status.HTTP_200_OK,
         )
