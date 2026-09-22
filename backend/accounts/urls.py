@@ -1,37 +1,90 @@
 from django.urls import path
-from .views import RegisterView, ProfileView
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
-from .views import RegisterView
-
+from .views import (
+    PlatformAdminAccountStatusView,
+    PlatformAdminDashboardView,
+    PlatformAdminManagerAssignmentListCreateView,
+    PlatformAdminManagerAssignmentStatusView,
+    PlatformAdminRoleUpdateView,
+    PlatformAdminUserListView,
+    ProfileView,
+    RegisterView,
+)
 
 urlpatterns = [
 
+    # Public account registration.
     path(
-        'register/',
+        "register/",
         RegisterView.as_view(),
-        name='register',
+        name="register",
     ),
 
+    # JWT authentication and access-token renewal.
     path(
-        'login/',
+        "login/",
         TokenObtainPairView.as_view(),
-        name='login',
+        name="login",
     ),
 
     path(
-        'token/refresh/',
+        "token/refresh/",
         TokenRefreshView.as_view(),
-        name='token_refresh',
+        name="token_refresh",
     ),
 
+    # Identity, product role and restaurant assignments for the currently
+    # authenticated user.
     path(
-    'profile/',
-    ProfileView.as_view(),
-    name='profile',
+        "profile/",
+        ProfileView.as_view(),
+        name="profile",
+    ),
+
+    # Platform Admin dashboard summary backed by live database counts.
+    path(
+        "admin/dashboard/",
+        PlatformAdminDashboardView.as_view(),
+        name="platform_admin_dashboard",
+    ),
+
+    # Platform Admin-only account overview.
+    path(
+        "admin/users/",
+        PlatformAdminUserListView.as_view(),
+        name="platform_admin_user_list",
+    ),
+
+    # Platform Admin-only product-role modification.
+    path(
+        "admin/users/<int:user_id>/role/",
+        PlatformAdminRoleUpdateView.as_view(),
+        name="platform_admin_role_update",
+    ),
+
+    # Platform Admin-only user suspension and reactivation.
+    path(
+        "admin/users/<int:user_id>/status/",
+        PlatformAdminAccountStatusView.as_view(),
+        name="platform_admin_account_status",
+    ),
+
+    # Platform Admin-only Manager assignment overview and creation.
+    path(
+        "admin/manager-assignments/",
+        PlatformAdminManagerAssignmentListCreateView.as_view(),
+        name="platform_admin_manager_assignment_list_create",
+    ),
+
+    # Platform Admin-only assignment activation and deactivation.
+    path(
+        "admin/manager-assignments/<int:assignment_id>/",
+        PlatformAdminManagerAssignmentStatusView.as_view(),
+        name="platform_admin_manager_assignment_status",
     ),
 
 ]

@@ -7,10 +7,44 @@ from .views import (
     TableAvailabilityAPIView,
     BookingCreateAPIView,
     MyBookingsAPIView,
+    ManagerRestaurantAPIView,
+    ManagerBranchListCreateAPIView,
+    ManagerBranchDetailAPIView,
+    ManagerMenuListCreateAPIView,
+    ManagerMenuDetailAPIView,
+    ManagerTableListCreateAPIView,
+    ManagerTableDetailAPIView,
+    ManagerReservationListAPIView,
+    ManagerReservationDetailAPIView,
+    ManagerDashboardAPIView,
+    ManagerReservationStatusAPIView,
+    PlatformAdminRestaurantListAPIView,
+    PlatformAdminRestaurantStatusAPIView,
+    PlatformAdminBookingListAPIView,
 )
 
 
 urlpatterns = [
+
+    # Platform Admin oversight includes inactive restaurants and is protected
+    # independently from the public customer-facing restaurant catalogue.
+    path(
+        'admin/restaurants/',
+        PlatformAdminRestaurantListAPIView.as_view(),
+        name='platform-admin-restaurant-list',
+    ),
+
+    path(
+        'admin/restaurants/<int:pk>/status/',
+        PlatformAdminRestaurantStatusAPIView.as_view(),
+        name='platform-admin-restaurant-status',
+    ),
+
+    path(
+        'admin/bookings/',
+        PlatformAdminBookingListAPIView.as_view(),
+        name='platform-admin-booking-list',
+    ),
 
     path(
         'restaurants/',
@@ -54,4 +88,70 @@ urlpatterns = [
     name='my-bookings',
     ),
 
+
+    path(
+        'manager/restaurant/',
+        ManagerRestaurantAPIView.as_view(),
+        name='manager-restaurant',
+    ),
+
+    path(
+        'manager/branches/',
+        ManagerBranchListCreateAPIView.as_view(),
+        name='manager-branch-list-create',
+    ),
+
+    path(
+        'manager/branches/<int:pk>/',
+        ManagerBranchDetailAPIView.as_view(),
+        name='manager-branch-detail',
+    ),
+
+    path(
+        'manager/menu/',
+        ManagerMenuListCreateAPIView.as_view(),
+        name='manager-menu-list-create',
+    ),
+
+    path(
+        'manager/menu/<int:pk>/',
+        ManagerMenuDetailAPIView.as_view(),
+        name='manager-menu-detail',
+    ),
+
+    path(
+        'manager/tables/',
+        ManagerTableListCreateAPIView.as_view(),
+        name='manager-table-list-create',
+    ),
+
+    path(
+        'manager/tables/<int:pk>/',
+        ManagerTableDetailAPIView.as_view(),
+        name='manager-table-detail',
+    ),
+
+    path(
+        'manager/reservations/',
+        ManagerReservationListAPIView.as_view(),
+        name='manager-reservation-list',
+    ),
+
+    path(
+        'manager/reservations/<int:pk>/',
+        ManagerReservationDetailAPIView.as_view(),
+        name='manager-reservation-detail',
+    ),
+
+    path(
+        'manager/dashboard/',
+        ManagerDashboardAPIView.as_view(),
+        name='manager-dashboard',
+    ),
+
+    path(
+        'manager/reservations/<int:pk>/status/',
+        ManagerReservationStatusAPIView.as_view(),
+        name='manager-reservation-status',
+    ),
 ]
