@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 
-import { getRestaurantManagerProfile } from '../../api/managerApi'
+import {
+  getManagerDashboard,
+  getRestaurantManagerProfile,
+} from '../../api/managerApi'
 import ManagerLayout from '../../components/manager/ManagerLayout'
 
 
 function ManagerDashboard() {
   const [profile, setProfile] = useState(null)
+  const [summary, setSummary] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -14,7 +18,12 @@ function ManagerDashboard() {
     setErrorMessage('')
 
     try {
-      setProfile(await getRestaurantManagerProfile())
+      const [managerProfile, dashboardSummary] = await Promise.all([
+        getRestaurantManagerProfile(),
+        getManagerDashboard(),
+      ])
+      setProfile(managerProfile)
+      setSummary(dashboardSummary)
     } catch (error) {
       setErrorMessage(error.message)
     } finally {
@@ -25,10 +34,14 @@ function ManagerDashboard() {
   useEffect(() => {
     let isCancelled = false
 
-    getRestaurantManagerProfile()
-      .then((managerProfile) => {
+    Promise.all([
+      getRestaurantManagerProfile(),
+      getManagerDashboard(),
+    ])
+      .then(([managerProfile, dashboardSummary]) => {
         if (!isCancelled) {
           setProfile(managerProfile)
+          setSummary(dashboardSummary)
         }
       })
       .catch((error) => {
@@ -48,6 +61,13 @@ function ManagerDashboard() {
   }, [])
 
   const assignedRestaurants = profile?.assigned_restaurants || []
+  const dashboardCards = [
+    ['Reservations', summary?.reservations.total, `${summary?.reservations.pending || 0} pending`],
+    ['Today', summary?.reservations.today, `${summary?.reservations.upcoming || 0} upcoming`],
+    ['Active branches', summary?.branches.active, `${summary?.branches.total || 0} total`],
+    ['Active tables', summary?.tables.active, `${summary?.tables.total || 0} total`],
+    ['Available menu items', summary?.menu_items.available, `${summary?.menu_items.total || 0} total`],
+  ]
 
   return (
     <ManagerLayout profile={profile}>
@@ -94,29 +114,20 @@ function ManagerDashboard() {
           </div>
         )}
 
-        <section className="mt-7 grid gap-4 sm:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-semibold text-slate-500">
-              Active restaurant assignments
-            </p>
-            <p className="mt-3 text-4xl font-bold text-slate-900">
-              {isLoading ? '—' : errorMessage ? 'Unavailable' : assignedRestaurants.length}
-            </p>
-            <p className="mt-4 text-xs leading-5 text-slate-400">
-              Access is controlled by Platform Admin assignments.
-            </p>
-          </article>
-
-          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
-              Verified identity
-            </p>
-            <p className="mt-3 text-lg font-bold text-slate-900">
-              Restaurant Manager
-            </p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Customer and Platform Admin accounts cannot enter this portal.
-            </p>
+        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {dashboardCards.map(([label, value, detail]) => (
+            <article key={label} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-sm font-semibold text-slate-500">{label}</p>
+              <p className="mt-3 text-4xl font-bold text-slate-900">
+                {isLoading ? '—' : errorMessage ? '—' : value ?? 0}
+              </p>
+              <p className="mt-3 text-xs text-slate-400">{detail}</p>
+            </article>
+          ))}
+          <article className="rounded-2xl border border-orange-200 bg-orange-50 p-6">
+            <p className="text-sm font-semibold text-orange-700">Assigned restaurants</p>
+            <p className="mt-3 text-4xl font-bold text-slate-900">{assignedRestaurants.length}</p>
+            <p className="mt-3 text-xs text-slate-500">Platform Admin controls access.</p>
           </article>
         </section>
 
@@ -126,8 +137,7 @@ function ManagerDashboard() {
               Your assigned restaurants
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Restaurant operations will be enabled here as their real APIs
-              become available.
+              Every operation in this portal is scoped to these assignments.
             </p>
           </div>
 

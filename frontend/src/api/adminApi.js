@@ -1,4 +1,4 @@
-const API_URL = (
+export const API_URL = (
   import.meta.env.VITE_API_URL
   || 'http://127.0.0.1:8000/api'
 )
@@ -23,7 +23,7 @@ function getErrorMessage(data, fallbackMessage) {
 }
 
 
-async function readJsonResponse(response, fallbackMessage) {
+export async function readJsonResponse(response, fallbackMessage) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
@@ -152,7 +152,7 @@ async function refreshAccessToken() {
 }
 
 
-async function authenticatedFetch(url, options = {}) {
+export async function authenticatedFetch(url, options = {}) {
   let accessToken = getAccessToken()
 
   if (!accessToken) {

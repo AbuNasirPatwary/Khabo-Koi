@@ -16,27 +16,27 @@ const navigationItems = [
   {
     label: 'Restaurant Profile',
     symbol: 'R',
-    to: null,
+    to: '/manager/restaurant-profile',
   },
   {
     label: 'Reservations',
     symbol: 'B',
-    to: null,
+    to: '/manager/reservations',
   },
   {
     label: 'Tables',
     symbol: 'T',
-    to: null,
+    to: '/manager/tables',
   },
   {
     label: 'Menu',
     symbol: 'M',
-    to: null,
+    to: '/manager/menu',
   },
   {
     label: 'Branches',
     symbol: 'L',
-    to: null,
+    to: '/manager/branches',
   },
 ]
 

@@ -22,6 +22,11 @@ import AdminUsers from './pages/admin/AdminUsers'
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
 import ManagerDashboard from './pages/manager/ManagerDashboard'
 import ManagerLogin from './pages/manager/ManagerLogin'
+import ManagerRestaurantProfile from './pages/manager/ManagerRestaurantProfile'
+import ManagerReservations from './pages/manager/ManagerReservations'
+import ManagerTables from './pages/manager/ManagerTables'
+import ManagerMenu from './pages/manager/ManagerMenu'
+import ManagerBranches from './pages/manager/ManagerBranches'
 import ProtectedManagerRoute from './components/manager/ProtectedManagerRoute'
 
 
@@ -140,6 +145,35 @@ function App() {
               <ManagerDashboard />
             </ProtectedManagerRoute>
           )}
+        />
+
+        <Route
+          path="/manager/restaurant-profile"
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerRestaurantProfile />
+            </ProtectedManagerRoute>
+          )}
+        />
+
+        <Route
+          path="/manager/reservations"
+          element={<ProtectedManagerRoute><ManagerReservations /></ProtectedManagerRoute>}
+        />
+
+        <Route
+          path="/manager/tables"
+          element={<ProtectedManagerRoute><ManagerTables /></ProtectedManagerRoute>}
+        />
+
+        <Route
+          path="/manager/menu"
+          element={<ProtectedManagerRoute><ManagerMenu /></ProtectedManagerRoute>}
+        />
+
+        <Route
+          path="/manager/branches"
+          element={<ProtectedManagerRoute><ManagerBranches /></ProtectedManagerRoute>}
         />
 
       </Routes>
