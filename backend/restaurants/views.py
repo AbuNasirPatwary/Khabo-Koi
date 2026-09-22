@@ -2006,36 +2006,45 @@ class ManagerReservationStatusAPIView(APIView):
         },
     }
 
-    def get_booking(self, request, pk):
+    def get_booking(self, request, pk, *, for_update=False):
 
         restaurant_ids = get_managed_restaurant_ids(
             request.user
         )
 
         try:
-            return (
-                Booking.objects
-                .select_related(
-                    'user',
-                    'branch',
-                    'branch__restaurant',
-                    'table',
+            queryset = Booking.objects.select_related(
+                'user',
+                'branch',
+                'branch__restaurant',
+                'table',
+            )
+
+            # Lock the booking during a status transition. Without this,
+            # simultaneous requests could validate the same stale status.
+            # Lock only Booking: its optional user relation creates an outer
+            # join that PostgreSQL correctly refuses to lock as a whole.
+            if for_update:
+                queryset = queryset.select_for_update(
+                    of=('self',),
                 )
-                .get(
-                    id=pk,
-                    branch__restaurant_id__in=restaurant_ids,
-                )
+
+            return queryset.get(
+                id=pk,
+                branch__restaurant_id__in=restaurant_ids,
             )
 
         except Booking.DoesNotExist:
             return None
 
 
+    @transaction.atomic
     def patch(self, request, pk):
 
         booking = self.get_booking(
             request,
             pk,
+            for_update=True,
         )
 
         if booking is None:
