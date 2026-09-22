@@ -1,4 +1,4 @@
-const API_URL = (
+export const API_URL = (
   import.meta.env.VITE_API_URL
   || 'http://127.0.0.1:8000/api'
 )
@@ -23,7 +23,7 @@ function getErrorMessage(data, fallbackMessage) {
 }
 
 
-async function readJsonResponse(response, fallbackMessage) {
+export async function readJsonResponse(response, fallbackMessage) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
@@ -53,7 +53,8 @@ export function clearAuthentication() {
 }
 
 
-export const ADMIN_AUTH_EXPIRED_EVENT = 'khabo-koi:admin-auth-expired'
+export const AUTH_EXPIRED_EVENT = 'khabo-koi:auth-expired'
+export const ADMIN_AUTH_EXPIRED_EVENT = AUTH_EXPIRED_EVENT
 
 
 let sessionGeneration = 0
@@ -62,10 +63,10 @@ let refreshRequest = null
 
 function createExpiredSessionError() {
   const error = new Error(
-    'Your Admin session has expired. Please sign in again.',
+    'Your session has expired. Please sign in again.',
   )
 
-  error.code = 'ADMIN_AUTH_EXPIRED'
+  error.code = 'AUTH_EXPIRED'
 
   return error
 }
@@ -151,7 +152,7 @@ async function refreshAccessToken() {
 }
 
 
-async function authenticatedFetch(url, options = {}) {
+export async function authenticatedFetch(url, options = {}) {
   let accessToken = getAccessToken()
 
   if (!accessToken) {
@@ -196,7 +197,11 @@ async function authenticatedFetch(url, options = {}) {
 }
 
 
-export async function loginPlatformAdmin(credentials) {
+export async function loginForProductRole(
+  credentials,
+  requiredRole,
+  roleLabel,
+) {
   // A new login attempt must never inherit credentials from an older account.
   clearAuthentication()
   const loginGeneration = sessionGeneration
@@ -233,9 +238,9 @@ export async function loginPlatformAdmin(credentials) {
     'Unable to verify the account role.',
   )
 
-  if (profile.role !== 'ADMIN') {
+  if (profile.role !== requiredRole) {
     throw new Error(
-      'This account does not have Platform Admin access.',
+      `This account does not have ${roleLabel} access.`,
     )
   }
 
@@ -252,7 +257,10 @@ export async function loginPlatformAdmin(credentials) {
 }
 
 
-export async function getPlatformAdminProfile() {
+export async function getProfileForProductRole(
+  requiredRole,
+  roleLabel,
+) {
   const response = await authenticatedFetch(
     `${API_URL}/accounts/profile/`,
   )
@@ -262,14 +270,31 @@ export async function getPlatformAdminProfile() {
     'Unable to load the authenticated profile.',
   )
 
-  if (profile.role !== 'ADMIN') {
+  if (profile.role !== requiredRole) {
     clearAuthentication()
     throw new Error(
-      'This account does not have Platform Admin access.',
+      `This account does not have ${roleLabel} access.`,
     )
   }
 
   return profile
+}
+
+
+export async function loginPlatformAdmin(credentials) {
+  return loginForProductRole(
+    credentials,
+    'ADMIN',
+    'Platform Admin',
+  )
+}
+
+
+export async function getPlatformAdminProfile() {
+  return getProfileForProductRole(
+    'ADMIN',
+    'Platform Admin',
+  )
 }
 
 
