@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useParams, } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, } from 'react-router-dom'
 
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
@@ -82,6 +82,7 @@ function RestaurantDetails() {
 
     const { id } = useParams()
     const location = useLocation()
+    const navigate = useNavigate()
     // Used by the Reserve button to scroll directly
     // to the table reservation section.
     const reservationSectionRef = useRef(null)
@@ -169,6 +170,9 @@ function RestaurantDetails() {
 
     const [bookingSuccess, setBookingSuccess] =
         useState(null)
+
+    const [specialRequest, setSpecialRequest] =
+        useState('')
 
 
 
@@ -595,7 +599,7 @@ function RestaurantDetails() {
     // Booking → PostgreSQL
     // =========================================================================
 
-    async function handleCreateBooking() {
+    async function handleCreateBooking(nextStep = 'complete') {
 
         setBookingError('')
         setBookingSuccess(null)
@@ -684,8 +688,15 @@ function RestaurantDetails() {
 
             if (!response.ok) {
 
+                if (response.status === 401) {
+                    throw new Error(
+                        'Please log in before creating a reservation.'
+                    )
+                }
+
                 throw new Error(
                     data.error ||
+                    data.detail ||
                     'Could not create booking.'
                 )
 
@@ -705,6 +716,48 @@ function RestaurantDetails() {
                             selectedTable.id
                     )
             )
+
+
+            // Continue to the food-preorder experience using the
+            // real booking that was just created. BrowseFood will
+            // read this navigation state in the next development step.
+            if (nextStep === 'food') {
+
+                const preorderContext = {
+                    booking: data,
+                    restaurant: {
+                        id: restaurant.id,
+                        name: restaurant.name,
+                    },
+                    branch: {
+                        id: selectedBranch?.id,
+                        name: selectedBranch?.name,
+                    },
+                    reservation_date: bookingDate,
+                    start_time: selectedTime,
+                    guest_count: Number(guests),
+                    seating_type: selectedSeating,
+                    table: selectedTable,
+                    special_request: specialRequest.trim(),
+                }
+
+                sessionStorage.setItem(
+                    'khabo_koi_preorder_context',
+                    JSON.stringify(preorderContext)
+                )
+
+                navigate(
+                    `/booking/${data.id}/preorder`,
+                    {
+                        state: {
+                            preorder: true,
+                            preorderContext,
+                        },
+                    }
+                )
+
+                return
+            }
 
 
             setSelectedTable(null)
@@ -1736,29 +1789,351 @@ function RestaurantDetails() {
 
 
 
-                            {/* RESERVE BUTTON */}
+                            {/* ====================================================
+                                FIGMA-STYLE BOOKING REVIEW
+                                ===================================================== */}
 
-                            {selectedTable && (
+                            {selectedTable && !bookingSuccess && (
 
-                                <div className="mt-8 flex justify-end">
+                                <div className="mt-10 space-y-6">
 
 
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            creatingBooking
-                                        }
-                                        onClick={
-                                            handleCreateBooking
-                                        }
-                                        className="rounded-xl bg-orange-500 px-8 py-4 font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
+                                    {/* BOOKING SUMMARY */}
 
-                                        {creatingBooking
-                                            ? 'Creating Reservation...'
-                                            : `Reserve ${selectedTable.table_number}`}
+                                    <div className="rounded-3xl border border-gray-200 bg-white p-7 shadow-sm">
 
-                                    </button>
+
+                                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
+
+                                            <div>
+
+
+                                                <p className="text-sm font-semibold uppercase tracking-wider text-orange-500">
+                                                    Review Reservation
+                                                </p>
+
+
+                                                <h3 className="mt-1 text-2xl font-bold text-gray-900">
+                                                    Booking Summary
+                                                </h3>
+
+
+                                            </div>
+
+
+                                            <span className="w-fit rounded-full bg-green-50 px-4 py-2 text-xs font-bold text-green-700">
+                                                Table available
+                                            </span>
+
+
+                                        </div>
+
+
+
+                                        <div className="mt-7 grid gap-x-8 gap-y-4 md:grid-cols-2">
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Restaurant
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {restaurant.name}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Branch
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {selectedBranch?.name || '-'}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Date
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {bookingDate || '-'}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Time
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {
+                                                        availableTimes.find(
+                                                            (time) =>
+                                                                time.value === selectedTime
+                                                        )?.label || '-'
+                                                    }
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Guests
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {guests} {guests === 1 ? 'Guest' : 'Guests'}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Seating
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    {
+                                                        seatingOptions.find(
+                                                            (option) =>
+                                                                option.value === selectedSeating
+                                                        )?.label || selectedTable.seating_type
+                                                    }
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Selected table
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    Table {selectedTable.table_number}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+
+                                                <span className="text-gray-500">
+                                                    Capacity
+                                                </span>
+
+                                                <span className="font-semibold text-gray-900">
+                                                    Up to {selectedTable.capacity} guests
+                                                </span>
+
+                                            </div>
+
+
+                                        </div>
+
+
+
+                                        <div className="mt-7 rounded-2xl bg-[#fdf8f0] p-5">
+
+
+                                            <div className="flex items-center justify-between">
+
+                                                <span className="text-gray-500">
+                                                    Table reservation
+                                                </span>
+
+                                                <span className="font-bold text-gray-900">
+                                                    ৳0
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="mt-3 flex items-start justify-between gap-4">
+
+                                                <span className="text-gray-500">
+                                                    Advance payment
+                                                </span>
+
+                                                <span className="max-w-xs text-right text-sm text-gray-500">
+                                                    Required only when food is added to the reservation.
+                                                </span>
+
+                                            </div>
+
+
+                                            <div className="mt-4 border-t border-gray-200 pt-4">
+
+
+                                                <div className="flex items-center justify-between">
+
+                                                    <span className="font-bold text-gray-900">
+                                                        Total now
+                                                    </span>
+
+                                                    <span className="text-2xl font-bold text-gray-900">
+                                                        ৳0
+                                                    </span>
+
+                                                </div>
+
+
+                                            </div>
+
+
+                                        </div>
+
+
+                                        <div className="mt-5 rounded-2xl bg-orange-50 px-5 py-4 text-sm text-orange-700">
+                                            ⓘ You can pre-order food in the next step, or reserve only the selected table.
+                                        </div>
+
+
+                                    </div>
+
+
+
+                                    {/* SPECIAL REQUEST */}
+
+                                    <div className="rounded-3xl border border-gray-200 bg-white p-7 shadow-sm">
+
+
+                                        <label
+                                            htmlFor="special-request"
+                                            className="text-lg font-bold text-gray-900"
+                                        >
+                                            Special request
+                                        </label>
+
+
+                                        <textarea
+                                            id="special-request"
+                                            value={specialRequest}
+                                            onChange={
+                                                (event) =>
+                                                    setSpecialRequest(
+                                                        event.target.value
+                                                    )
+                                            }
+                                            rows={4}
+                                            maxLength={300}
+                                            placeholder="Add any seating or dining request..."
+                                            className="mt-4 w-full resize-none rounded-2xl border border-gray-200 bg-[#f7f2e9] px-5 py-4 text-sm text-gray-700 outline-none transition focus:border-orange-400 focus:bg-white"
+                                        />
+
+
+                                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-gray-500">
+
+                                            <span>
+                                                Requests are subject to restaurant confirmation.
+                                            </span>
+
+                                            <span>
+                                                {specialRequest.length}/300
+                                            </span>
+
+                                        </div>
+
+
+                                    </div>
+
+
+
+                                    {/* BOOKING POLICIES */}
+
+                                    <div className="rounded-3xl border border-[#ded7ca] bg-[#f1ece2] p-7">
+
+
+                                        <h4 className="font-bold text-gray-900">
+                                            Booking policies
+                                        </h4>
+
+
+                                        <div className="mt-4 space-y-3 text-sm text-gray-600">
+
+                                            <p>
+                                                ⓘ Please arrive within 15 minutes of your booking time.
+                                            </p>
+
+                                            <p>
+                                                ⓘ Selected tables remain subject to the final availability check when you confirm.
+                                            </p>
+
+                                            <p>
+                                                ⓘ Food pre-orders may require an advance payment.
+                                            </p>
+
+                                        </div>
+
+
+                                    </div>
+
+
+
+                                    {/* ACTIONS */}
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+
+
+                                        <button
+                                            type="button"
+                                            disabled={creatingBooking}
+                                            onClick={
+                                                () =>
+                                                    handleCreateBooking('food')
+                                            }
+                                            className="rounded-2xl bg-orange-500 px-6 py-4 font-bold text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+
+                                            {creatingBooking
+                                                ? 'Creating Reservation...'
+                                                : 'Continue to Food Pre-order'}
+
+                                        </button>
+
+
+                                        <button
+                                            type="button"
+                                            disabled={creatingBooking}
+                                            onClick={
+                                                () =>
+                                                    handleCreateBooking('complete')
+                                            }
+                                            className="rounded-2xl border border-gray-300 bg-white px-6 py-4 font-bold text-gray-900 transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+
+                                            {creatingBooking
+                                                ? 'Creating Reservation...'
+                                                : 'Book Table Only'}
+
+                                        </button>
+
+
+                                    </div>
+
+
+                                    <p className="text-center text-sm text-gray-500">
+                                        ✓ Free cancellation policy can be reviewed before your reservation time.
+                                    </p>
 
 
                                 </div>

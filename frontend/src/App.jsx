@@ -13,6 +13,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
+import FoodPreorderPayment from './pages/FoodPreorderPayment'
+import BookingConfirmation from './pages/BookingConfirmation'
+
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminBookings from './pages/admin/AdminBookings'
 import AdminLogin from './pages/admin/AdminLogin'
@@ -20,6 +23,7 @@ import AdminManagerAssignments from './pages/admin/AdminManagerAssignments'
 import AdminRestaurants from './pages/admin/AdminRestaurants'
 import AdminUsers from './pages/admin/AdminUsers'
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
+
 import ManagerDashboard from './pages/manager/ManagerDashboard'
 import ManagerLogin from './pages/manager/ManagerLogin'
 import ManagerRestaurantProfile from './pages/manager/ManagerRestaurantProfile'
@@ -31,18 +35,15 @@ import ProtectedManagerRoute from './components/manager/ProtectedManagerRoute'
 
 
 function App() {
+
   return (
+
     <BrowserRouter>
 
-      {/* APP ROUTES:
-                Each URL below displays a different React page.
-                Later we will add restaurant details, booking,
-                confirmation, profile and dashboard routes here. */}
       <Routes>
-        <Route
-          path="/restaurants/:id"
-          element={<RestaurantDetails />}
-        />
+
+        {/* CUSTOMER */}
+
         <Route
           path="/"
           element={<Home />}
@@ -54,8 +55,23 @@ function App() {
         />
 
         <Route
+          path="/restaurants/:id"
+          element={<RestaurantDetails />}
+        />
+
+        <Route
           path="/browse-food"
           element={<BrowseFood />}
+        />
+
+        <Route
+          path="/booking/:bookingId/preorder"
+          element={<FoodPreorderPayment />}
+        />
+
+        <Route
+          path="/booking/:bookingId/confirmation"
+          element={<BookingConfirmation />}
         />
 
         <Route
@@ -77,6 +93,9 @@ function App() {
           path="/profile"
           element={<Profile />}
         />
+
+
+        {/* PLATFORM ADMIN */}
 
         <Route
           path="/platform-admin/login"
@@ -128,6 +147,9 @@ function App() {
           )}
         />
 
+
+        {/* RESTAURANT MANAGER */}
+
         <Route
           path="/manager/login"
           element={<ManagerLogin />}
@@ -135,7 +157,12 @@ function App() {
 
         <Route
           path="/manager"
-          element={<Navigate to="/manager/dashboard" replace />}
+          element={
+            <Navigate
+              to="/manager/dashboard"
+              replace
+            />
+          }
         />
 
         <Route
@@ -158,28 +185,46 @@ function App() {
 
         <Route
           path="/manager/reservations"
-          element={<ProtectedManagerRoute><ManagerReservations /></ProtectedManagerRoute>}
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerReservations />
+            </ProtectedManagerRoute>
+          )}
         />
 
         <Route
           path="/manager/tables"
-          element={<ProtectedManagerRoute><ManagerTables /></ProtectedManagerRoute>}
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerTables />
+            </ProtectedManagerRoute>
+          )}
         />
 
         <Route
           path="/manager/menu"
-          element={<ProtectedManagerRoute><ManagerMenu /></ProtectedManagerRoute>}
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerMenu />
+            </ProtectedManagerRoute>
+          )}
         />
 
         <Route
           path="/manager/branches"
-          element={<ProtectedManagerRoute><ManagerBranches /></ProtectedManagerRoute>}
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerBranches />
+            </ProtectedManagerRoute>
+          )}
         />
 
       </Routes>
 
     </BrowserRouter>
+
   )
+
 }
 
 
