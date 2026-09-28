@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
+import { saveFoodPreorder } from '../api/preorderApi'
 
 import kacchiImage from '../assets/images/landing/kacchi.png'
 import burgerImage from '../assets/images/landing/burger.png'
@@ -94,6 +95,9 @@ function FoodPreorderPayment() {
         useState(null)
 
     const [processingPayment, setProcessingPayment] =
+        useState(false)
+
+    const [savingPreorder, setSavingPreorder] =
         useState(false)
 
 
@@ -357,7 +361,9 @@ function FoodPreorderPayment() {
     }
 
 
-    function continueToConfirmation() {
+    async function continueToConfirmation() {
+
+        setMessage('')
 
         if (selectedItems.length === 0) {
 
@@ -381,68 +387,111 @@ function FoodPreorderPayment() {
         }
 
 
-        const preorder = {
-            booking_id:
-                context?.booking?.id ||
-                Number(bookingId),
+        try {
 
-            restaurant:
-                context?.restaurant,
+            setSavingPreorder(true)
 
-            branch:
-                context?.branch,
-
-            items:
-                selectedItems.map(
-                    (item) => ({
-                        id: item.id,
-                        name: item.name,
-                        price: Number(item.price),
-                        quantity: item.quantity,
-                        line_total: item.line_total,
-                    })
-                ),
-
-            subtotal,
-            advance_amount:
-                advanceAmount,
-            remaining_amount:
-                remainingAmount,
-
-            payment:
-                paymentData,
-
-            special_request:
-                context?.special_request || '',
-        }
+            const savedPreorder = await saveFoodPreorder(
+                bookingId,
+                {
+                    items: selectedItems.map(
+                        (item) => ({
+                            food_item_id: item.id,
+                            quantity: item.quantity,
+                        })
+                    ),
+                    advance_amount: advanceAmount,
+                    payment_status: 'ADVANCE_PAID',
+                    payment_method: paymentData.method,
+                    transaction_id: paymentData.transaction_id,
+                    special_request: context?.special_request || '',
+                }
+            )
 
 
-        sessionStorage.setItem(
-            `khabo_koi_preorder_${bookingId}`,
-            JSON.stringify(preorder)
-        )
+            const preorder = {
+                booking_id:
+                    context?.booking?.id ||
+                    Number(bookingId),
 
+                database_id:
+                    savedPreorder?.id || null,
 
-        const confirmation = {
-            ...context,
-            preorder,
-        }
+                status:
+                    savedPreorder?.status || 'PLACED',
 
+                restaurant:
+                    context?.restaurant,
 
-        sessionStorage.setItem(
-            'khabo_koi_confirmation_context',
-            JSON.stringify(confirmation)
-        )
+                branch:
+                    context?.branch,
 
+                items:
+                    selectedItems.map(
+                        (item) => ({
+                            id: item.id,
+                            name: item.name,
+                            price: Number(item.price),
+                            quantity: item.quantity,
+                            line_total: item.line_total,
+                        })
+                    ),
 
-        navigate(
-            `/booking/${bookingId}/confirmation`,
-            {
-                state: {
-                    confirmation,
-                },
+                subtotal,
+                advance_amount:
+                    advanceAmount,
+                remaining_amount:
+                    remainingAmount,
+
+                payment:
+                    paymentData,
+
+                special_request:
+                    context?.special_request || '',
             }
-        )
+
+
+            sessionStorage.setItem(
+                `khabo_koi_preorder_${bookingId}`,
+                JSON.stringify(preorder)
+            )
+
+
+            const confirmation = {
+                ...context,
+                preorder,
+            }
+
+
+            sessionStorage.setItem(
+                'khabo_koi_confirmation_context',
+                JSON.stringify(confirmation)
+            )
+
+
+            navigate(
+                `/booking/${bookingId}/confirmation`,
+                {
+                    state: {
+                        confirmation,
+                    },
+                }
+            )
+
+        } catch (requestError) {
+
+            console.error(requestError)
+
+            setMessage(
+                requestError?.message ||
+                'Could not save the food pre-order. Please try again.'
+            )
+
+        } finally {
+
+            setSavingPreorder(false)
+
+        }
 
     }
 
@@ -1081,9 +1130,12 @@ function FoodPreorderPayment() {
                         <button
                             type="button"
                             onClick={continueToConfirmation}
-                            className="mt-6 w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600"
+                            disabled={savingPreorder}
+                            className="mt-6 w-full rounded-xl bg-orange-500 px-5 py-4 font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            Confirm Food Pre-order
+                            {savingPreorder
+                                ? 'Saving Food Pre-order...'
+                                : 'Confirm Food Pre-order'}
                         </button>
 
 
