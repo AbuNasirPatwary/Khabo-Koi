@@ -6,6 +6,8 @@ from rest_framework_simplejwt.views import (
 
 from .views import (
     PlatformAdminAccountStatusView,
+    PlatformAdminBranchManagerAssignmentListCreateView,
+    PlatformAdminBranchManagerAssignmentStatusView,
     PlatformAdminDashboardView,
     PlatformAdminManagerAssignmentListCreateView,
     PlatformAdminManagerAssignmentStatusView,
@@ -85,6 +87,19 @@ urlpatterns = [
         "admin/manager-assignments/<int:assignment_id>/",
         PlatformAdminManagerAssignmentStatusView.as_view(),
         name="platform_admin_manager_assignment_status",
+    ),
+
+
+    path(
+        "admin/branch-manager-assignments/",
+        PlatformAdminBranchManagerAssignmentListCreateView.as_view(),
+        name="platform_admin_branch_manager_assignment_list_create",
+    ),
+
+    path(
+        "admin/branch-manager-assignments/<int:assignment_id>/",
+        PlatformAdminBranchManagerAssignmentStatusView.as_view(),
+        name="platform_admin_branch_manager_assignment_status",
     ),
 
 ]

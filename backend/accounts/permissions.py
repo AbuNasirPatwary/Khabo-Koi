@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from .models import (
+    BranchManagerAssignment,
     RestaurantManagerAssignment,
     UserProfile,
 )
@@ -168,4 +169,56 @@ def get_managed_restaurant_ids(user):
             "restaurant_id",
             flat=True,
         )
+    )
+
+
+# =============================================================================
+# BRANCH MANAGER PERMISSIONS + SCOPE
+# =============================================================================
+class IsBranchManager(BasePermission):
+    message = "Branch Manager access is required."
+
+    def has_permission(self, request, view):
+        return user_has_role(
+            request.user,
+            UserProfile.Role.BRANCH_MANAGER,
+        )
+
+
+class HasActiveBranchAssignment(BasePermission):
+    message = "An active branch assignment is required."
+
+    def has_permission(self, request, view):
+        if not user_has_role(
+            request.user,
+            UserProfile.Role.BRANCH_MANAGER,
+        ):
+            return False
+
+        return BranchManagerAssignment.objects.filter(
+            user=request.user,
+            is_active=True,
+            branch__is_active=True,
+            branch__restaurant__is_active=True,
+        ).exists()
+
+
+def get_managed_branch_ids(user):
+    if not user_has_role(
+        user,
+        UserProfile.Role.BRANCH_MANAGER,
+    ):
+        return (
+            BranchManagerAssignment.objects.none()
+            .values_list("branch_id", flat=True)
+        )
+
+    return (
+        BranchManagerAssignment.objects.filter(
+            user=user,
+            is_active=True,
+            branch__is_active=True,
+            branch__restaurant__is_active=True,
+        )
+        .values_list("branch_id", flat=True)
     )
