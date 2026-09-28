@@ -174,6 +174,9 @@ function RestaurantDetails() {
     const [specialRequest, setSpecialRequest] =
         useState('')
 
+    const [showSpecialRequest, setShowSpecialRequest] =
+        useState(false)
+
 
 
     // =========================================================================
@@ -677,6 +680,9 @@ function RestaurantDetails() {
 
                         customer_phone:
                             customerPhone.trim(),
+
+                        special_request:
+                            specialRequest.trim(),
                     }),
                 }
             )
@@ -985,12 +991,20 @@ function RestaurantDetails() {
                                     .map(
                                         (branch) => (
 
-                                            <span
+                                            <button
                                                 key={branch.id}
-                                                className="rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-600"
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedBranchId(String(branch.id))
+                                                    resetAvailability()
+                                                }}
+                                                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${selectedBranchId === String(branch.id)
+                                                    ? 'border-orange-500 bg-orange-500 text-white'
+                                                    : 'border-gray-200 bg-white text-gray-600 hover:border-orange-400'
+                                                    }`}
                                             >
                                                 📍 {branch.name}
-                                            </span>
+                                            </button>
 
                                         )
                                     )}
@@ -2016,43 +2030,86 @@ function RestaurantDetails() {
 
                                     <div className="rounded-3xl border border-gray-200 bg-white p-7 shadow-sm">
 
+                                        <div className="flex items-center justify-between gap-4">
 
-                                        <label
-                                            htmlFor="special-request"
-                                            className="text-lg font-bold text-gray-900"
-                                        >
-                                            Special request
-                                        </label>
+                                            <div>
+                                                <h4 className="text-lg font-bold text-gray-900">
+                                                    Special Request
+                                                </h4>
 
+                                                <p className="mt-1 text-sm text-gray-500">
+                                                    Add an optional note for the restaurant.
+                                                </p>
+                                            </div>
 
-                                        <textarea
-                                            id="special-request"
-                                            value={specialRequest}
-                                            onChange={
-                                                (event) =>
-                                                    setSpecialRequest(
-                                                        event.target.value
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setShowSpecialRequest(
+                                                        (current) => !current
                                                     )
-                                            }
-                                            rows={4}
-                                            maxLength={300}
-                                            placeholder="Add any seating or dining request..."
-                                            className="mt-4 w-full resize-none rounded-2xl border border-gray-200 bg-[#f7f2e9] px-5 py-4 text-sm text-gray-700 outline-none transition focus:border-orange-400 focus:bg-white"
-                                        />
-
-
-                                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-gray-500">
-
-                                            <span>
-                                                Requests are subject to restaurant confirmation.
-                                            </span>
-
-                                            <span>
-                                                {specialRequest.length}/300
-                                            </span>
+                                                }
+                                                className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm font-bold text-orange-600 transition hover:bg-orange-100"
+                                            >
+                                                {showSpecialRequest
+                                                    ? 'Hide Request'
+                                                    : '+ Add Special Request'}
+                                            </button>
 
                                         </div>
 
+
+                                        {showSpecialRequest && (
+
+                                            <div className="mt-5">
+
+                                                <textarea
+                                                    id="special-request"
+                                                    value={specialRequest}
+                                                    onChange={(event) =>
+                                                        setSpecialRequest(
+                                                            event.target.value
+                                                        )
+                                                    }
+                                                    rows={4}
+                                                    maxLength={300}
+                                                    placeholder="Example: Window-side table if possible, birthday arrangement, wheelchair access..."
+                                                    className="w-full resize-none rounded-2xl border border-gray-200 bg-[#f7f2e9] px-5 py-4 text-sm text-gray-700 outline-none transition focus:border-orange-400 focus:bg-white"
+                                                />
+
+
+                                                <div className="mt-2 flex items-center justify-between gap-4 text-xs text-gray-500">
+
+                                                    <span>
+                                                        Requests are subject to restaurant confirmation.
+                                                    </span>
+
+                                                    <span>
+                                                        {specialRequest.length}/300
+                                                    </span>
+
+                                                </div>
+
+                                            </div>
+
+                                        )}
+
+
+                                        {!showSpecialRequest && specialRequest && (
+
+                                            <div className="mt-5 rounded-2xl bg-orange-50 p-4">
+
+                                                <p className="text-xs font-bold uppercase tracking-wider text-orange-500">
+                                                    Added Request
+                                                </p>
+
+                                                <p className="mt-2 text-sm text-gray-700">
+                                                    {specialRequest}
+                                                </p>
+
+                                            </div>
+
+                                        )}
 
                                     </div>
 
