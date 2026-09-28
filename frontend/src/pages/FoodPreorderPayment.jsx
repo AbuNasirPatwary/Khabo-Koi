@@ -75,7 +75,25 @@ function FoodPreorderPayment() {
     const location = useLocation()
     const navigate = useNavigate()
 
-    const [context, setContext] = useState(null)
+    // Navigation state is preferred, with session storage providing recovery
+    // after a refresh. The booking context is fixed for this page instance.
+    const [context] = useState(() => {
+        if (location.state?.preorderContext) {
+            return location.state.preorderContext
+        }
+
+        const savedContext = sessionStorage.getItem(
+            'khabo_koi_preorder_context'
+        )
+
+        if (!savedContext) return null
+
+        try {
+            return JSON.parse(savedContext)
+        } catch {
+            return null
+        }
+    })
     const [foods, setFoods] = useState([])
     const [quantities, setQuantities] = useState({})
     const [loading, setLoading] = useState(true)
@@ -107,38 +125,10 @@ function FoodPreorderPayment() {
             location.state?.preorderContext
 
         if (stateContext) {
-
-            setContext(stateContext)
-
             sessionStorage.setItem(
                 'khabo_koi_preorder_context',
                 JSON.stringify(stateContext)
             )
-
-            return
-        }
-
-
-        const savedContext =
-            sessionStorage.getItem(
-                'khabo_koi_preorder_context'
-            )
-
-
-        if (savedContext) {
-
-            try {
-
-                setContext(
-                    JSON.parse(savedContext)
-                )
-
-            } catch {
-
-                setContext(null)
-
-            }
-
         }
 
     }, [location.state])

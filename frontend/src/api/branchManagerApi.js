@@ -8,6 +8,7 @@ import {
   loginForProductRole,
   readJsonResponse,
 } from './adminApi'
+import { createAnalyticsQuery } from '../utils/analytics'
 
 export const BRANCH_MANAGER_AUTH_EXPIRED_EVENT = AUTH_EXPIRED_EVENT
 export const clearBranchManagerAuthentication = clearAuthentication
@@ -37,7 +38,10 @@ function jsonOptions(method, body) {
 }
 
 export const getBranchManagerContext = () => branchRequest('context/', 'Unable to load assigned branch.')
-export const getBranchManagerDashboard = () => branchRequest('dashboard/', 'Unable to load dashboard.')
+export const getBranchManagerDashboard = (filters = {}) => branchRequest(
+  `dashboard/?${createAnalyticsQuery(filters)}`,
+  'Unable to load dashboard.',
+)
 export const getBranchManagerTables = () => branchRequest('tables/', 'Unable to load tables.')
 export const getBranchManagerMenu = () => branchRequest('menu/', 'Unable to load menu availability.')
 export const getBranchManagerNotifications = () => branchRequest('notifications/', 'Unable to load notifications.')

@@ -30,7 +30,21 @@ function BranchManagerPreorders() {
     }
   }
 
-  useEffect(() => { load('') }, [])
+  useEffect(() => {
+    let isCancelled = false
+
+    getBranchManagerPreorders('')
+      .then((preorders) => {
+        if (!isCancelled) setRows(preorders)
+      })
+      .catch((err) => {
+        if (!isCancelled) setMessage(err.message)
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   async function changeStatus(row, next) {
     try {

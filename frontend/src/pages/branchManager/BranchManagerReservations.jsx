@@ -29,7 +29,21 @@ function BranchManagerReservations() {
     }
   }
 
-  useEffect(() => { load({}) }, [])
+  useEffect(() => {
+    let isCancelled = false
+
+    getBranchManagerReservations({})
+      .then((reservations) => {
+        if (!isCancelled) setRows(reservations)
+      })
+      .catch((err) => {
+        if (!isCancelled) setMessage(err.message)
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   async function changeStatus(row, next) {
     try {

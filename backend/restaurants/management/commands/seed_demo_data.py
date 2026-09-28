@@ -1,11 +1,17 @@
-from datetime import time
+from datetime import time, timedelta
+from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from restaurants.models import (
-    Restaurant,
+    Booking,
     Branch,
     FoodItem,
+    FoodPreorder,
+    FoodPreorderItem,
+    Restaurant,
     RestaurantTable,
 )
 
@@ -255,11 +261,25 @@ class Command(BaseCommand):
                 'rating': 4.9,
             },
             {
+                'restaurant': "Sultan's Dine",
+                'name': 'Borhani',
+                'category': 'Drinks',
+                'price': 90,
+                'rating': 4.6,
+            },
+            {
                 'restaurant': 'Chillox',
                 'name': 'Classic Beef Burger',
                 'category': 'Burger',
                 'price': 320,
                 'rating': 4.8,
+            },
+            {
+                'restaurant': 'Chillox',
+                'name': 'Loaded Fries',
+                'category': 'Sides',
+                'price': 220,
+                'rating': 4.5,
             },
             {
                 'restaurant': 'Madchef',
@@ -269,18 +289,33 @@ class Command(BaseCommand):
                 'rating': 4.7,
             },
             {
+                'restaurant': 'Madchef',
+                'name': 'Grilled Chicken Steak',
+                'category': 'Continental',
+                'price': 490,
+                'rating': 4.6,
+            },
+            {
                 'restaurant': 'Kacchi Bhai',
                 'name': 'Special Kacchi',
                 'category': 'Kacchi',
                 'price': 520,
                 'rating': 4.8,
             },
+            {
+                'restaurant': 'Kacchi Bhai',
+                'name': 'Chicken Roast',
+                'category': 'Bengali',
+                'price': 190,
+                'rating': 4.5,
+            },
         ]
 
+        foods = {}
 
         for data in food_data:
 
-            FoodItem.objects.update_or_create(
+            food_item, _ = FoodItem.objects.update_or_create(
 
                 restaurant=restaurants[
                     data['restaurant']
@@ -298,9 +333,200 @@ class Command(BaseCommand):
                 },
             )
 
+            foods.setdefault(data['restaurant'], []).append(food_item)
+
+        # =====================================================================
+        # ANALYTICS DEMO CUSTOMERS
+        # =====================================================================
+        # These accounts make the generated bookings easy to identify without
+        # depending on any real user. An unusable password keeps seed accounts
+        # from becoming shared demo credentials by accident.
+
+        User = get_user_model()
+        demo_customers = []
+
+        for number in range(1, 5):
+            user, created = User.objects.get_or_create(
+                username=f'analytics_customer_{number}',
+                defaults={
+                    'email': f'analytics.customer{number}@example.com',
+                    'first_name': 'Analytics',
+                    'last_name': f'Customer {number}',
+                },
+            )
+
+            if created:
+                user.set_unusable_password()
+                user.save(update_fields=['password'])
+
+            demo_customers.append(user)
+
+        # =====================================================================
+        # HISTORICAL BOOKINGS AND FOOD PREORDERS
+        # =====================================================================
+        # Every branch receives a booking for today plus several historical
+        # records. Busier branches intentionally receive more records so the
+        # ranking and comparison charts have visibly different results.
+        #
+        # A stable DEMO-ANALYTICS phone marker identifies each generated row.
+        # Re-running the command updates the same rows relative to today's date
+        # instead of creating duplicates, while unrelated user data is kept.
+
+        branch_booking_counts = [
+            (("Sultan's Dine", 'Dhanmondi'), 6),
+            (("Sultan's Dine", 'Gulshan'), 5),
+            (("Sultan's Dine", 'Uttara'), 4),
+            (('Chillox', 'Banani'), 5),
+            (('Chillox', 'Dhanmondi'), 3),
+            (('Chillox', 'Uttara'), 2),
+            (('Madchef', 'Uttara'), 4),
+            (('Madchef', 'Banani'), 3),
+            (('Kacchi Bhai', 'Mirpur'), 3),
+            (('Kacchi Bhai', 'Dhanmondi'), 2),
+        ]
+        date_offsets = [0, -7, -21, -45, -90, -150]
+        time_slots = [
+            (time(12, 0), time(13, 0)),
+            (time(13, 30), time(14, 30)),
+            (time(18, 0), time(19, 0)),
+            (time(19, 30), time(20, 30)),
+            (time(21, 0), time(22, 0)),
+        ]
+        historical_statuses = [
+            'COMPLETED',
+            'COMPLETED',
+            'CANCELLED',
+            'COMPLETED',
+            'CONFIRMED',
+        ]
+        today = timezone.localdate()
+        booking_number = 0
+        preorder_count = 0
+
+        for branch_index, (branch_key, booking_count) in enumerate(
+            branch_booking_counts
+        ):
+            branch = branches[branch_key]
+            tables = list(branch.tables.order_by('table_number'))
+            restaurant_foods = foods[branch.restaurant.name]
+
+            for position in range(booking_count):
+                booking_number += 1
+                customer = demo_customers[
+                    (branch_index + position) % len(demo_customers)
+                ]
+                start_time, end_time = time_slots[
+                    (branch_index + position) % len(time_slots)
+                ]
+                status = (
+                    ('PENDING', 'CONFIRMED')[branch_index % 2]
+                    if position == 0
+                    else historical_statuses[
+                        (branch_index + position) % len(historical_statuses)
+                    ]
+                )
+                marker = f'DEMO-ANALYTICS-{booking_number:03d}'
+
+                booking, _ = Booking.objects.update_or_create(
+                    customer_phone=marker,
+                    defaults={
+                        'user': customer,
+                        'branch': branch,
+                        'table': tables[position % len(tables)],
+                        'reservation_date': (
+                            today + timedelta(days=date_offsets[position])
+                        ),
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'guest_count': 2 + (
+                            (branch_index + position) % 5
+                        ),
+                        'customer_name': customer.get_full_name(),
+                        'special_request': (
+                            'Analytics demo reservation.'
+                        ),
+                        'status': status,
+                    },
+                )
+
+                # Keep a few bookings without preorders so dashboards can show
+                # that booking and preorder totals are separate measurements.
+                if (branch_index + position) % 5 == 0:
+                    continue
+
+                if status == 'COMPLETED':
+                    preorder_status = 'COMPLETED'
+                    payment_status = 'PAID'
+                elif status == 'CANCELLED':
+                    preorder_status = 'CANCELLED'
+                    payment_status = 'UNPAID'
+                else:
+                    preorder_status = (
+                        'PREPARING' if branch_index % 2 else 'PLACED'
+                    )
+                    payment_status = (
+                        'ADVANCE_PAID' if branch_index % 3 else 'UNPAID'
+                    )
+
+                selected_items = [
+                    (restaurant_foods[0], 1 + (position % 3)),
+                ]
+                if (branch_index + position) % 2:
+                    selected_items.append((restaurant_foods[1], 1))
+
+                total_amount = sum(
+                    (
+                        food_item.price * quantity
+                        for food_item, quantity in selected_items
+                    ),
+                    Decimal('0.00'),
+                )
+                advance_amount = Decimal('0.00')
+                if payment_status == 'PAID':
+                    advance_amount = total_amount
+                elif payment_status == 'ADVANCE_PAID':
+                    advance_amount = (
+                        total_amount * Decimal('0.25')
+                    ).quantize(Decimal('0.01'))
+
+                preorder, _ = FoodPreorder.objects.update_or_create(
+                    booking=booking,
+                    defaults={
+                        'status': preorder_status,
+                        'total_amount': total_amount,
+                        'advance_amount': advance_amount,
+                        'payment_status': payment_status,
+                        'payment_method': (
+                            'DEMO_PAYMENT'
+                            if payment_status != 'UNPAID'
+                            else ''
+                        ),
+                        'transaction_id': (
+                            f'DEMO-TXN-{booking_number:03d}'
+                            if payment_status != 'UNPAID'
+                            else ''
+                        ),
+                        'special_request': 'Analytics demo preorder.',
+                    },
+                )
+
+                for food_item, quantity in selected_items:
+                    FoodPreorderItem.objects.update_or_create(
+                        preorder=preorder,
+                        food_item=food_item,
+                        defaults={
+                            'quantity': quantity,
+                            'unit_price': food_item.price,
+                        },
+                    )
+
+                preorder_count += 1
+
 
         self.stdout.write(
             self.style.SUCCESS(
-                'Khabo-Koi demo data created successfully.'
+                'Khabo-Koi demo data created successfully: '
+                f'{booking_number} analytics bookings and '
+                f'{preorder_count} food preorders are ready.'
             )
         )
