@@ -486,3 +486,50 @@ export async function getPlatformAdminBookings() {
     'Unable to load booking oversight data.',
   )
 }
+
+
+export async function getPlatformAdminBranchManagerAssignments() {
+  const response = await authenticatedFetch(
+    `${API_URL}/accounts/admin/branch-manager-assignments/`,
+  )
+  return readJsonResponse(
+    response,
+    'Unable to load Branch Manager assignments.',
+  )
+}
+
+export async function createPlatformAdminBranchManagerAssignment(userId, branchId) {
+  const response = await authenticatedFetch(
+    `${API_URL}/accounts/admin/branch-manager-assignments/`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        branch_id: branchId,
+      }),
+    },
+  )
+  return readJsonResponse(
+    response,
+    'Unable to create Branch Manager assignment.',
+  )
+}
+
+export async function updatePlatformAdminBranchManagerAssignment(
+  assignmentId,
+  isActive,
+) {
+  const response = await authenticatedFetch(
+    `${API_URL}/accounts/admin/branch-manager-assignments/${assignmentId}/`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: isActive }),
+    },
+  )
+  return readJsonResponse(
+    response,
+    'Unable to update Branch Manager assignment.',
+  )
+}
