@@ -295,6 +295,11 @@ class Booking(models.Model):
         max_length=30,
         blank=True,
     )
+    
+    special_request = models.TextField(
+        blank=True,
+        default='',
+    )
 
 
     status = models.CharField(
@@ -317,3 +322,110 @@ class Booking(models.Model):
             f'{self.reservation_date} '
             f'{self.start_time}'
         )
+
+
+# =============================================================================
+# BRANCH-SPECIFIC MENU AVAILABILITY
+# =============================================================================
+class BranchMenuAvailability(models.Model):
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.CASCADE,
+        related_name="menu_availability",
+    )
+    food_item = models.ForeignKey(
+        FoodItem,
+        on_delete=models.CASCADE,
+        related_name="branch_availability",
+    )
+    is_available = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "food_item"],
+                name="unique_branch_food_availability",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.branch} - {self.food_item.name}"
+
+
+class FoodPreorder(models.Model):
+    STATUS_CHOICES = [
+        ("PLACED", "Placed"),
+        ("PREPARING", "Preparing"),
+        ("READY", "Ready"),
+        ("COMPLETED", "Completed"),
+        ("CANCELLED", "Cancelled"),
+    ]
+    PAYMENT_STATUS_CHOICES = [
+        ("UNPAID", "Unpaid"),
+        ("ADVANCE_PAID", "Advance Paid"),
+        ("PAID", "Paid"),
+    ]
+
+    booking = models.OneToOneField(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name="food_preorder",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="PLACED",
+    )
+    total_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+    )
+    advance_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+    )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default="UNPAID",
+    )
+    payment_method = models.CharField(max_length=30, blank=True)
+    transaction_id = models.CharField(max_length=80, blank=True)
+    special_request = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Preorder #{self.id} - Booking #{self.booking_id}"
+
+
+class FoodPreorderItem(models.Model):
+    preorder = models.ForeignKey(
+        FoodPreorder,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    food_item = models.ForeignKey(
+        FoodItem,
+        on_delete=models.PROTECT,
+        related_name="preorder_items",
+    )
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["preorder", "food_item"],
+                name="unique_food_item_per_preorder",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.food_item.name} x {self.quantity}"

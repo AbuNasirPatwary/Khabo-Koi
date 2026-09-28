@@ -21,6 +21,17 @@ from .views import (
     PlatformAdminRestaurantListAPIView,
     PlatformAdminRestaurantStatusAPIView,
     PlatformAdminBookingListAPIView,
+    BranchManagerContextAPIView,
+    BranchManagerDashboardAPIView,
+    BranchManagerReservationListAPIView,
+    BranchManagerReservationStatusAPIView,
+    BranchManagerTableListCreateAPIView,
+    BranchManagerTableDetailAPIView,
+    BranchManagerMenuAvailabilityAPIView,
+    FoodPreorderCreateUpdateAPIView,
+    BranchManagerPreorderListAPIView,
+    BranchManagerPreorderStatusAPIView,
+    BranchManagerNotificationsAPIView,
 )
 
 
@@ -154,4 +165,71 @@ urlpatterns = [
         ManagerReservationStatusAPIView.as_view(),
         name='manager-reservation-status',
     ),
+
+    path(
+        'bookings/<int:booking_id>/preorder/',
+        FoodPreorderCreateUpdateAPIView.as_view(),
+        name='food-preorder-create-update',
+    ),
+
+    path(
+        'branch-manager/context/',
+        BranchManagerContextAPIView.as_view(),
+        name='branch-manager-context',
+    ),
+
+    path(
+        'branch-manager/dashboard/',
+        BranchManagerDashboardAPIView.as_view(),
+        name='branch-manager-dashboard',
+    ),
+
+    path(
+        'branch-manager/reservations/',
+        BranchManagerReservationListAPIView.as_view(),
+        name='branch-manager-reservations',
+    ),
+
+    path(
+        'branch-manager/reservations/<int:pk>/status/',
+        BranchManagerReservationStatusAPIView.as_view(),
+        name='branch-manager-reservation-status',
+    ),
+
+    path(
+        'branch-manager/tables/',
+        BranchManagerTableListCreateAPIView.as_view(),
+        name='branch-manager-tables',
+    ),
+
+    path(
+        'branch-manager/tables/<int:pk>/',
+        BranchManagerTableDetailAPIView.as_view(),
+        name='branch-manager-table-detail',
+    ),
+
+    path(
+        'branch-manager/menu/',
+        BranchManagerMenuAvailabilityAPIView.as_view(),
+        name='branch-manager-menu',
+    ),
+
+    path(
+        'branch-manager/preorders/',
+        BranchManagerPreorderListAPIView.as_view(),
+        name='branch-manager-preorders',
+    ),
+
+    path(
+        'branch-manager/preorders/<int:pk>/status/',
+        BranchManagerPreorderStatusAPIView.as_view(),
+        name='branch-manager-preorder-status',
+    ),
+
+    path(
+        'branch-manager/notifications/',
+        BranchManagerNotificationsAPIView.as_view(),
+        name='branch-manager-notifications',
+    ),
+
 ]
