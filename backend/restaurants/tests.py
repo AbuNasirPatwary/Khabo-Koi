@@ -1,4 +1,5 @@
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -7,6 +8,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import (
+    BranchManagerAssignment,
     RestaurantManagerAssignment,
     UserProfile,
 )
@@ -15,6 +17,8 @@ from .models import (
     Booking,
     Branch,
     FoodItem,
+    FoodPreorder,
+    FoodPreorderItem,
     Restaurant,
     RestaurantTable,
 )
@@ -3464,3 +3468,197 @@ class ManagerDashboardAPITests(APITestCase):
             response.data['menu_items']['available'],
             1,
         )
+
+
+# =============================================================================
+# ROLE-SCOPED DASHBOARD ANALYTICS
+# =============================================================================
+class DashboardAnalyticsAPITests(APITestCase):
+    """Calculations must be accurate without crossing assignment boundaries."""
+
+    def setUp(self):
+        self.today = date.today()
+        self.restaurant = Restaurant.objects.create(name="Analytics Restaurant")
+        self.other_restaurant = Restaurant.objects.create(name="Hidden Restaurant")
+        self.branch = Branch.objects.create(
+            restaurant=self.restaurant, name="Analytics Main"
+        )
+        self.second_branch = Branch.objects.create(
+            restaurant=self.restaurant, name="Analytics North"
+        )
+        self.hidden_branch = Branch.objects.create(
+            restaurant=self.other_restaurant, name="Hidden Branch"
+        )
+        self.table = RestaurantTable.objects.create(
+            branch=self.branch, table_number="A1", capacity=4
+        )
+        self.second_table = RestaurantTable.objects.create(
+            branch=self.second_branch, table_number="A2", capacity=4
+        )
+        self.hidden_table = RestaurantTable.objects.create(
+            branch=self.hidden_branch, table_number="H1", capacity=10
+        )
+        self.food = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name="Analytics Kacchi",
+            category="Main",
+            price=Decimal("50.00"),
+        )
+        self.second_food = FoodItem.objects.create(
+            restaurant=self.restaurant,
+            name="Analytics Drink",
+            category="Drink",
+            price=Decimal("200.00"),
+        )
+        self.hidden_food = FoodItem.objects.create(
+            restaurant=self.other_restaurant,
+            name="Hidden Meal",
+            category="Main",
+            price=Decimal("500.00"),
+        )
+
+        self.customer = User.objects.create_user(
+            username="analytics-customer", password="testpass123"
+        )
+        self.manager = User.objects.create_user(
+            username="analytics-manager", password="testpass123"
+        )
+        self.manager.profile.role = UserProfile.Role.RESTAURANT_MANAGER
+        self.manager.profile.save()
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager, restaurant=self.restaurant, is_active=True
+        )
+        self.branch_manager = User.objects.create_user(
+            username="analytics-branch-manager", password="testpass123"
+        )
+        self.branch_manager.profile.role = UserProfile.Role.BRANCH_MANAGER
+        self.branch_manager.profile.save()
+        BranchManagerAssignment.objects.create(
+            user=self.branch_manager, branch=self.branch, is_active=True
+        )
+        self.admin = User.objects.create_user(
+            username="analytics-admin", password="testpass123"
+        )
+        self.admin.profile.role = UserProfile.Role.ADMIN
+        self.admin.profile.save()
+
+        completed = self._booking(self.branch, self.table, "COMPLETED", 4, time(12))
+        cancelled = self._booking(self.branch, self.table, "CANCELLED", 2, time(14))
+        confirmed = self._booking(
+            self.second_branch, self.second_table, "CONFIRMED", 3, time(16)
+        )
+        hidden = self._booking(
+            self.hidden_branch, self.hidden_table, "COMPLETED", 10, time(18)
+        )
+        self._preorder(completed, "COMPLETED", "PAID", "100.00", "0.00", self.food, 2)
+        self._preorder(cancelled, "CANCELLED", "PAID", "999.00", "0.00", self.food, 5)
+        self._preorder(
+            confirmed, "PLACED", "ADVANCE_PAID", "200.00", "50.00", self.second_food, 1
+        )
+        self._preorder(hidden, "COMPLETED", "PAID", "500.00", "0.00", self.hidden_food, 1)
+
+    def _booking(self, branch, table, booking_status, guests, start):
+        return Booking.objects.create(
+            user=self.customer,
+            branch=branch,
+            table=table,
+            reservation_date=self.today,
+            start_time=start,
+            end_time=(datetime.combine(self.today, start) + timedelta(minutes=90)).time(),
+            guest_count=guests,
+            status=booking_status,
+        )
+
+    def _preorder(
+        self, booking, preorder_status, payment_status,
+        total, advance, food, quantity,
+    ):
+        preorder = FoodPreorder.objects.create(
+            booking=booking,
+            status=preorder_status,
+            payment_status=payment_status,
+            total_amount=Decimal(total),
+            advance_amount=Decimal(advance),
+        )
+        FoodPreorderItem.objects.create(
+            preorder=preorder,
+            food_item=food,
+            quantity=quantity,
+            unit_price=food.price,
+        )
+
+    def test_manager_analytics_calculations_and_restaurant_scope(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.get(reverse("manager-dashboard"), {"range": "today"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        analytics = response.data["analytics"]
+        self.assertEqual(analytics["reservations"]["total"], 3)
+        self.assertEqual(analytics["reservations"]["guests"], 9)
+        self.assertEqual(analytics["reservations"]["completion_rate"], 33.33)
+        self.assertEqual(analytics["reservations"]["cancellation_rate"], 33.33)
+        self.assertEqual(analytics["preorders"]["total"], 3)
+        self.assertEqual(analytics["preorders"]["total_value"], "300.00")
+        self.assertEqual(analytics["preorders"]["collected_amount"], "150.00")
+        self.assertEqual(analytics["preorders"]["outstanding_amount"], "150.00")
+        self.assertEqual(len(analytics["branch_performance"]), 2)
+        self.assertNotIn("Hidden Meal", [item["name"] for item in analytics["top_items"]])
+
+    def test_platform_admin_analytics_cover_the_whole_platform(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(
+            reverse("platform_admin_dashboard"), {"range": "today"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        analytics = response.data["analytics"]
+        self.assertEqual(analytics["reservations"]["total"], 4)
+        self.assertEqual(analytics["reservations"]["guests"], 19)
+        self.assertEqual(analytics["preorders"]["total_value"], "800.00")
+        self.assertEqual(analytics["preorders"]["collected_amount"], "650.00")
+        self.assertEqual(analytics["preorders"]["outstanding_amount"], "150.00")
+        self.assertEqual(len(analytics["branch_performance"]), 3)
+
+    def test_branch_manager_analytics_are_limited_to_assigned_branch(self):
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.get(
+            reverse("branch-manager-dashboard"), {"range": "today"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        analytics = response.data["analytics"]
+        self.assertEqual(analytics["reservations"]["total"], 2)
+        self.assertEqual(analytics["reservations"]["guests"], 6)
+        self.assertEqual(analytics["preorders"]["total_value"], "100.00")
+        self.assertEqual(len(analytics["branch_performance"]), 1)
+        self.assertEqual(
+            analytics["branch_performance"][0]["branch_id"], self.branch.id
+        )
+
+    def test_custom_range_filters_all_analytics_sections(self):
+        self.client.force_authenticate(self.manager)
+        yesterday = (self.today - timedelta(days=1)).isoformat()
+        response = self.client.get(
+            reverse("manager-dashboard"),
+            {"range": "custom", "date_from": yesterday, "date_to": yesterday},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        analytics = response.data["analytics"]
+        self.assertEqual(analytics["reservations"]["total"], 0)
+        self.assertEqual(analytics["preorders"]["total"], 0)
+        self.assertEqual(analytics["top_items"], [])
+        self.assertEqual(analytics["trend"], [])
+
+    def test_dashboard_rejects_unsupported_and_incomplete_ranges(self):
+        self.client.force_authenticate(self.manager)
+        url = reverse("manager-dashboard")
+
+        for params in (
+            {"range": "year"},
+            {"range": "custom", "date_from": self.today.isoformat()},
+            {"range": "custom", "date_from": "not-a-date", "date_to": "2026-01-01"},
+        ):
+            with self.subTest(params=params):
+                response = self.client.get(url, params)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

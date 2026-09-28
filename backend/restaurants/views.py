@@ -34,6 +34,10 @@ from .models import (
     FoodPreorder,
     FoodPreorderItem,
 )
+from .analytics import (
+    AnalyticsPeriodError,
+    build_dashboard_analytics,
+)
 
 from .serializers import (
     RestaurantSerializer,
@@ -2215,6 +2219,21 @@ class ManagerDashboardAPIView(APIView):
             },
         }
 
+        try:
+            data['analytics'] = build_dashboard_analytics(
+                query_params=request.query_params,
+                bookings=reservations,
+                preorders=FoodPreorder.objects.filter(
+                    booking__branch__restaurant_id__in=restaurant_ids,
+                ),
+                branches=branches,
+            )
+        except AnalyticsPeriodError as exc:
+            return Response(
+                {'error': str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         return Response(
             data,
             status=status.HTTP_200_OK,
@@ -2291,7 +2310,7 @@ class BranchManagerDashboardAPIView(APIView):
         bookings = Booking.objects.filter(branch=branch)
         tables = RestaurantTable.objects.filter(branch=branch)
         preorders = FoodPreorder.objects.filter(booking__branch=branch)
-        return Response({
+        data = {
             "branch": BranchManagerContextSerializer(branch).data,
             "reservations": {
                 "total": bookings.count(),
@@ -2309,7 +2328,20 @@ class BranchManagerDashboardAPIView(APIView):
                 "preparing": preorders.filter(status="PREPARING").count(),
                 "ready": preorders.filter(status="READY").count(),
             },
-        })
+        }
+        try:
+            data["analytics"] = build_dashboard_analytics(
+                query_params=request.query_params,
+                bookings=bookings,
+                preorders=preorders,
+                branches=Branch.objects.filter(id=branch.id),
+            )
+        except AnalyticsPeriodError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(data)
 
 
 class BranchManagerReservationListAPIView(APIView):

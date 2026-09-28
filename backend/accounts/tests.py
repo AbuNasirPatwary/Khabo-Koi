@@ -2477,11 +2477,7 @@ class PlatformAdminDashboardAPITests(APITestCase):
                 user=self.customer,
                 branch=branch,
                 table=table,
-                reservation_date=date(
-                    2026,
-                    9,
-                    20,
-                ),
+                reservation_date=date.today(),
                 start_time=time(
                     18,
                     0,
@@ -2556,26 +2552,31 @@ class PlatformAdminDashboardAPITests(APITestCase):
             status.HTTP_200_OK,
         )
 
-        self.assertEqual(
-            response.data,
-            {
+        expected_summary = {
                 "total_restaurants": 2,
                 "active_restaurants": 1,
                 "total_users": 4,
                 "active_users": 3,
                 "total_bookings": 3,
                 "pending_bookings": 2,
-            },
+        }
+        for field, expected in expected_summary.items():
+            self.assertEqual(response.data[field], expected)
+
+        # Analytics are additive, so existing dashboard consumers retain all
+        # of their original top-level summary fields.
+        self.assertIn("analytics", response.data)
+        self.assertEqual(response.data["analytics"]["reservations"]["total"], 3)
+        self.assertNotIn("payment_volume", response.data)
+        self.assertNotIn("pending_approvals", response.data)
+
+    def test_dashboard_rejects_invalid_analytics_period(self):
+        self.authenticate(self.platform_admin)
+
+        response = self.client.get(
+            self.dashboard_url,
+            {"range": "custom", "date_from": "2026-09-30", "date_to": "2026-09-01"},
         )
 
-        # Payment and restaurant-approval models do not exist yet. Omitting
-        # these values is more accurate than returning decorative Figma data.
-        self.assertNotIn(
-            "payment_volume",
-            response.data,
-        )
-
-        self.assertNotIn(
-            "pending_approvals",
-            response.data,
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_from", response.data["error"])
