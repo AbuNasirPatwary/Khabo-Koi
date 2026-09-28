@@ -80,6 +80,20 @@ class Branch(models.Model):
         blank=True,
     )
 
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+
     phone = models.CharField(
         max_length=30,
         blank=True,
@@ -98,7 +112,6 @@ class Branch(models.Model):
     is_active = models.BooleanField(
         default=True,
     )
-
 
     def __str__(self):
         return f'{self.restaurant.name} - {self.name}'

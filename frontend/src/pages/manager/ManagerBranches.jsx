@@ -12,6 +12,7 @@ import ManagerLayout from '../../components/manager/ManagerLayout'
 
 const emptyBranch = {
   restaurant_id: '', name: '', address: '', phone: '',
+  latitude: '', longitude: '',
   opening_time: '09:00', closing_time: '22:00', is_active: true,
 }
 
@@ -66,6 +67,8 @@ function ManagerBranches() {
     setForm({
       restaurant_id: String(branch.restaurant), name: branch.name,
       address: branch.address, phone: branch.phone,
+      latitude: branch.latitude ?? '',
+      longitude: branch.longitude ?? '',
       opening_time: branch.opening_time.slice(0, 5),
       closing_time: branch.closing_time.slice(0, 5), is_active: branch.is_active,
     })
@@ -77,7 +80,12 @@ function ManagerBranches() {
     setIsSaving(true)
     setMessage({ type: '', text: '' })
     try {
-      const payload = { ...form, restaurant_id: Number(form.restaurant_id) }
+      const payload = {
+        ...form,
+        restaurant_id: Number(form.restaurant_id),
+        latitude: form.latitude === '' ? null : Number(form.latitude),
+        longitude: form.longitude === '' ? null : Number(form.longitude),
+      }
       if (editingId) {
         delete payload.restaurant_id
       }
@@ -122,6 +130,31 @@ function ManagerBranches() {
             <label className="text-sm font-semibold text-slate-700">Name<input name="name" value={form.name} onChange={changeField} required className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
             <label className="text-sm font-semibold text-slate-700">Phone<input name="phone" value={form.phone} onChange={changeField} required className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
             <label className="text-sm font-semibold text-slate-700 md:col-span-2">Address<input name="address" value={form.address} onChange={changeField} required className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
+            <label className="text-sm font-semibold text-slate-700">
+              Latitude
+              <input
+                name="latitude"
+                type="number"
+                step="0.000001"
+                value={form.latitude}
+                onChange={changeField}
+                placeholder="23.810300"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+              />
+            </label>
+
+            <label className="text-sm font-semibold text-slate-700">
+              Longitude
+              <input
+                name="longitude"
+                type="number"
+                step="0.000001"
+                value={form.longitude}
+                onChange={changeField}
+                placeholder="90.412500"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+              />
+            </label>
             <label className="text-sm font-semibold text-slate-700">Opening time<input name="opening_time" type="time" value={form.opening_time} onChange={changeField} required className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
             <label className="text-sm font-semibold text-slate-700">Closing time<input name="closing_time" type="time" value={form.closing_time} onChange={changeField} required className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal" /></label>
             <label className="flex items-center gap-2 self-end rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold"><input name="is_active" type="checkbox" checked={form.is_active} onChange={changeField} /> Active</label>

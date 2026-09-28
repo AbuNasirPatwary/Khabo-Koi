@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
+import RestaurantMap from '../components/RestaurantMap'
 
 import sultansDineImage from '../assets/images/landing/sultans-dine.png'
 import chilloxImage from '../assets/images/landing/chillox.png'
@@ -387,6 +388,38 @@ function Restaurants() {
 
 
     // =========================================================================
+    // MAP BRANCHES
+    // =========================================================================
+    // Reuse the filtered restaurant results so the map follows the existing
+    // search, location and cuisine filters. Only active branches with
+    // coordinates are passed to Leaflet.
+    // =========================================================================
+
+    const mapBranches = useMemo(() => {
+
+        return filteredRestaurants.flatMap(
+            (restaurant) =>
+                restaurant.branches
+                    ?.filter(
+                        (branch) =>
+                            branch.is_active &&
+                            branch.latitude &&
+                            branch.longitude
+                    )
+                    .map(
+                        (branch) => ({
+                            ...branch,
+                            restaurant_name: restaurant.name,
+                            restaurant_id: restaurant.id,
+                        })
+                    ) || []
+        )
+
+    }, [filteredRestaurants])
+
+
+
+    // =========================================================================
     // CLEAR FILTERS
     // =========================================================================
 
@@ -750,6 +783,47 @@ function Restaurants() {
 
                             </div>
 
+
+                        </div>
+
+
+
+                        {/* ====================================================
+                            DHAKA RESTAURANT MAP
+                        ===================================================== */}
+
+                        <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+
+                            <div className="mb-4">
+
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    Restaurants on Map
+                                </h3>
+
+                                <p className="mt-1 text-sm text-gray-500">
+                                    Explore restaurant branches across Dhaka.
+                                </p>
+
+                            </div>
+
+                            {mapBranches.length > 0 ? (
+
+                                <RestaurantMap
+                                    branches={mapBranches}
+                                    height="420px"
+                                />
+
+                            ) : (
+
+                                <div className="flex h-52 items-center justify-center rounded-xl bg-gray-50">
+
+                                    <p className="text-sm text-gray-500">
+                                        No mapped restaurant branches found.
+                                    </p>
+
+                                </div>
+
+                            )}
 
                         </div>
 
