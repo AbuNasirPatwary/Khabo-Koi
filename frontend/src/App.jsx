@@ -32,6 +32,16 @@ import ManagerTables from './pages/manager/ManagerTables'
 import ManagerMenu from './pages/manager/ManagerMenu'
 import ManagerBranches from './pages/manager/ManagerBranches'
 import ProtectedManagerRoute from './components/manager/ProtectedManagerRoute'
+import AdminBranchManagerAssignments from './pages/admin/AdminBranchManagerAssignments'
+import BranchManagerLogin from './pages/branchManager/BranchManagerLogin'
+import BranchManagerDashboard from './pages/branchManager/BranchManagerDashboard'
+import BranchManagerReservations from './pages/branchManager/BranchManagerReservations'
+import BranchManagerPreorders from './pages/branchManager/BranchManagerPreorders'
+import BranchManagerTables from './pages/branchManager/BranchManagerTables'
+import BranchManagerMenu from './pages/branchManager/BranchManagerMenu'
+import BranchManagerProfile from './pages/branchManager/BranchManagerProfile'
+import BranchManagerNotifications from './pages/branchManager/BranchManagerNotifications'
+import ProtectedBranchManagerRoute from './components/branchManager/ProtectedBranchManagerRoute'
 
 
 function App() {
@@ -217,6 +227,24 @@ function App() {
               <ManagerBranches />
             </ProtectedManagerRoute>
           )}
+        />
+
+
+        {/* BRANCH MANAGER */}
+
+        <Route path="/branch-manager/login" element={<BranchManagerLogin />} />
+        <Route path="/branch-manager" element={<Navigate to="/branch-manager/dashboard" replace />} />
+        <Route path="/branch-manager/dashboard" element={<ProtectedBranchManagerRoute><BranchManagerDashboard /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/reservations" element={<ProtectedBranchManagerRoute><BranchManagerReservations /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/preorders" element={<ProtectedBranchManagerRoute><BranchManagerPreorders /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/tables" element={<ProtectedBranchManagerRoute><BranchManagerTables /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/menu" element={<ProtectedBranchManagerRoute><BranchManagerMenu /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/profile" element={<ProtectedBranchManagerRoute><BranchManagerProfile /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/notifications" element={<ProtectedBranchManagerRoute><BranchManagerNotifications /></ProtectedBranchManagerRoute>} />
+
+        <Route
+          path="/platform-admin/branch-manager-assignments"
+          element={<ProtectedAdminRoute><AdminBranchManagerAssignments /></ProtectedAdminRoute>}
         />
 
       </Routes>

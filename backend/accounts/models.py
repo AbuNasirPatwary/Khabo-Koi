@@ -192,3 +192,47 @@ class RestaurantManagerAssignment(models.Model):
             f"{self.user.username} - "
             f"{self.restaurant.name}"
         )
+
+
+# =============================================================================
+# BRANCH MANAGER ASSIGNMENT
+# =============================================================================
+class BranchManagerAssignment(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="branch_manager_assignments",
+    )
+    branch = models.ForeignKey(
+        "restaurants.Branch",
+        on_delete=models.CASCADE,
+        related_name="branch_manager_assignments",
+    )
+    is_active = models.BooleanField(default=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="branch_manager_assignments_created",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "branch"],
+                name="unique_branch_manager_branch_assignment",
+            ),
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(is_active=True),
+                name="unique_active_branch_manager_assignment",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user.username} - "
+            f"{self.branch.restaurant.name} - {self.branch.name}"
+        )

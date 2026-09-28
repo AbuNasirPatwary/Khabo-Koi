@@ -7,6 +7,9 @@ from .models import (
     FoodItem,
     RestaurantTable,
     Booking,
+    BranchMenuAvailability,
+    FoodPreorder,
+    FoodPreorderItem,
 )
 
 
@@ -247,6 +250,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'guest_count',
             'customer_name',
             'customer_phone',
+            'special_request',
             'status',
             'created_at',
         ]
@@ -539,4 +543,112 @@ class ManagerReservationSerializer(serializers.ModelSerializer):
             'created_at',
         ]
 
+        read_only_fields = fields
+
+
+# =============================================================================
+# BRANCH MANAGER SERIALIZERS
+# =============================================================================
+class BranchManagerContextSerializer(serializers.ModelSerializer):
+    restaurant_id = serializers.IntegerField(
+        source="restaurant.id",
+        read_only=True,
+    )
+    restaurant_name = serializers.CharField(
+        source="restaurant.name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = Branch
+        fields = [
+            "id", "name", "address", "phone",
+            "opening_time", "closing_time", "is_active",
+            "restaurant_id", "restaurant_name",
+        ]
+        read_only_fields = [
+            "id", "name", "is_active",
+            "restaurant_id", "restaurant_name",
+        ]
+
+
+class BranchManagerTableSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(
+        source="branch.name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = RestaurantTable
+        fields = [
+            "id", "branch", "branch_name",
+            "table_number", "capacity",
+            "seating_type", "is_active",
+        ]
+        read_only_fields = ["id", "branch", "branch_name"]
+
+    def validate_capacity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Capacity must be greater than zero."
+            )
+        return value
+
+
+class BranchManagerReservationSerializer(ManagerReservationSerializer):
+    pass
+
+
+class FoodPreorderItemSerializer(serializers.ModelSerializer):
+    food_item_name = serializers.CharField(
+        source="food_item.name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = FoodPreorderItem
+        fields = [
+            "id", "food_item", "food_item_name",
+            "quantity", "unit_price",
+        ]
+        read_only_fields = [
+            "id", "food_item_name", "unit_price",
+        ]
+
+
+class FoodPreorderSerializer(serializers.ModelSerializer):
+    items = FoodPreorderItemSerializer(many=True, read_only=True)
+    booking_id = serializers.IntegerField(source="booking.id", read_only=True)
+    customer_name = serializers.CharField(
+        source="booking.customer_name", read_only=True
+    )
+    customer_phone = serializers.CharField(
+        source="booking.customer_phone", read_only=True
+    )
+    branch_name = serializers.CharField(
+        source="booking.branch.name", read_only=True
+    )
+    restaurant_name = serializers.CharField(
+        source="booking.branch.restaurant.name", read_only=True
+    )
+    table_number = serializers.CharField(
+        source="booking.table.table_number", read_only=True
+    )
+    reservation_date = serializers.DateField(
+        source="booking.reservation_date", read_only=True
+    )
+    start_time = serializers.TimeField(
+        source="booking.start_time", read_only=True
+    )
+
+    class Meta:
+        model = FoodPreorder
+        fields = [
+            "id", "booking_id", "customer_name", "customer_phone",
+            "restaurant_name", "branch_name", "table_number",
+            "reservation_date", "start_time", "status",
+            "total_amount", "advance_amount", "payment_status",
+            "payment_method", "transaction_id", "special_request",
+            "created_at", "updated_at", "items",
+        ]
         read_only_fields = fields

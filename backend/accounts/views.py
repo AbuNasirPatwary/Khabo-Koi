@@ -7,16 +7,21 @@ from rest_framework.views import APIView
 
 from restaurants.models import (
     Booking,
+    Branch,
     Restaurant,
 )
 
 from .models import (
+    BranchManagerAssignment,
     RestaurantManagerAssignment,
     UserProfile,
 )
 from .permissions import IsPlatformAdmin
 from .serializers import (
     PlatformAdminAccountStatusSerializer,
+    PlatformAdminBranchManagerAssignmentCreateSerializer,
+    PlatformAdminBranchManagerAssignmentSerializer,
+    PlatformAdminBranchManagerAssignmentStatusSerializer,
     PlatformAdminDashboardSerializer,
     PlatformAdminManagerAssignmentCreateSerializer,
     PlatformAdminManagerAssignmentSerializer,
@@ -359,3 +364,45 @@ class PlatformAdminDashboardView(APIView):
             serializer.data,
             status=status.HTTP_200_OK,
         )
+
+
+# =============================================================================
+# PLATFORM ADMIN - BRANCH MANAGER ASSIGNMENTS
+# =============================================================================
+class PlatformAdminBranchManagerAssignmentListCreateView(
+    generics.ListCreateAPIView
+):
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+
+    def get_queryset(self):
+        return (
+            BranchManagerAssignment.objects
+            .select_related(
+                "user", "user__profile",
+                "branch", "branch__restaurant",
+                "assigned_by",
+            )
+            .order_by("-assigned_at")
+        )
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return PlatformAdminBranchManagerAssignmentCreateSerializer
+        return PlatformAdminBranchManagerAssignmentSerializer
+
+
+class PlatformAdminBranchManagerAssignmentStatusView(
+    generics.UpdateAPIView
+):
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    serializer_class = PlatformAdminBranchManagerAssignmentStatusSerializer
+    http_method_names = ["patch", "options"]
+    queryset = (
+        BranchManagerAssignment.objects
+        .select_related(
+            "user", "user__profile",
+            "branch", "branch__restaurant",
+        )
+    )
+    lookup_field = "id"
+    lookup_url_kwarg = "assignment_id"

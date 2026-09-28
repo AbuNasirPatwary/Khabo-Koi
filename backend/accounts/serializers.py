@@ -4,9 +4,10 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
-from restaurants.models import Restaurant
+from restaurants.models import Branch, Restaurant
 
 from .models import (
+    BranchManagerAssignment,
     RestaurantManagerAssignment,
     UserProfile,
 )
@@ -287,6 +288,16 @@ class PlatformAdminRoleUpdateSerializer(serializers.ModelSerializer):
             != UserProfile.Role.RESTAURANT_MANAGER
         ):
             profile.user.restaurant_assignments.update(
+                is_active=False
+            )
+
+        if (
+            previous_role
+            == UserProfile.Role.BRANCH_MANAGER
+            and new_role
+            != UserProfile.Role.BRANCH_MANAGER
+        ):
+            profile.user.branch_manager_assignments.update(
                 is_active=False
             )
 
@@ -637,6 +648,9 @@ class PlatformAdminAccountStatusSerializer(
             user.restaurant_assignments.update(
                 is_active=False
             )
+            user.branch_manager_assignments.update(
+                is_active=False
+            )
 
         return user
 
@@ -676,3 +690,179 @@ class PlatformAdminDashboardSerializer(
     pending_bookings = serializers.IntegerField(
         read_only=True,
     )
+
+
+# =============================================================================
+# PLATFORM ADMIN BRANCH MANAGER ASSIGNMENTS
+# =============================================================================
+class PlatformAdminBranchManagerAssignmentSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    branch = serializers.SerializerMethodField()
+    assigned_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BranchManagerAssignment
+        fields = [
+            "id", "user", "branch", "is_active",
+            "assigned_at", "assigned_by",
+        ]
+        read_only_fields = fields
+
+    def get_user(self, assignment):
+        return {
+            "id": assignment.user_id,
+            "username": assignment.user.username,
+            "email": assignment.user.email,
+            "role": assignment.user.profile.role,
+        }
+
+    def get_branch(self, assignment):
+        return {
+            "id": assignment.branch_id,
+            "name": assignment.branch.name,
+            "restaurant_id": assignment.branch.restaurant_id,
+            "restaurant_name": assignment.branch.restaurant.name,
+            "address": assignment.branch.address,
+            "is_active": assignment.branch.is_active,
+        }
+
+    def get_assigned_by(self, assignment):
+        if assignment.assigned_by is None:
+            return None
+        return {
+            "id": assignment.assigned_by_id,
+            "username": assignment.assigned_by.username,
+        }
+
+
+class PlatformAdminBranchManagerAssignmentCreateSerializer(serializers.Serializer):
+    user_id = serializers.PrimaryKeyRelatedField(
+        source="user",
+        queryset=User.objects.select_related("profile"),
+    )
+    branch_id = serializers.PrimaryKeyRelatedField(
+        source="branch",
+        queryset=Branch.objects.select_related("restaurant"),
+    )
+
+    def validate_user_id(self, user):
+        if not user.is_active:
+            raise serializers.ValidationError(
+                "The selected user account is inactive."
+            )
+        if user.profile.role != UserProfile.Role.BRANCH_MANAGER:
+            raise serializers.ValidationError(
+                "The selected user must have the Branch Manager role."
+            )
+        return user
+
+    def validate_branch_id(self, branch):
+        if not branch.is_active or not branch.restaurant.is_active:
+            raise serializers.ValidationError(
+                "Only an active branch of an active restaurant can be assigned."
+            )
+        return branch
+
+    def validate(self, attributes):
+        user = attributes["user"]
+        branch = attributes["branch"]
+
+        if BranchManagerAssignment.objects.filter(
+            user=user,
+            is_active=True,
+        ).exclude(branch=branch).exists():
+            raise serializers.ValidationError(
+                "This Branch Manager already has an active branch assignment."
+            )
+
+        if BranchManagerAssignment.objects.filter(
+            user=user,
+            branch=branch,
+        ).exists():
+            raise serializers.ValidationError(
+                "This assignment already exists. Reactivate the existing record."
+            )
+
+        return attributes
+
+    @transaction.atomic
+    def create(self, validated_data):
+        request = self.context["request"]
+        user = User.objects.select_for_update().get(
+            id=validated_data["user"].id
+        )
+        branch = Branch.objects.select_for_update().select_related(
+            "restaurant"
+        ).get(id=validated_data["branch"].id)
+
+        self.validate_user_id(user)
+        self.validate_branch_id(branch)
+
+        if BranchManagerAssignment.objects.filter(
+            user=user,
+            is_active=True,
+        ).exists():
+            raise serializers.ValidationError(
+                "This Branch Manager already has an active branch assignment."
+            )
+
+        return BranchManagerAssignment.objects.create(
+            user=user,
+            branch=branch,
+            assigned_by=request.user,
+        )
+
+
+class PlatformAdminBranchManagerAssignmentStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BranchManagerAssignment
+        fields = ["is_active"]
+
+    def validate(self, attributes):
+        if "is_active" not in attributes:
+            raise serializers.ValidationError({
+                "is_active": "This field is required.",
+            })
+        return attributes
+
+    @transaction.atomic
+    def update(self, assignment, validated_data):
+        assignment = (
+            BranchManagerAssignment.objects
+            .select_for_update()
+            .select_related(
+                "user", "user__profile",
+                "branch", "branch__restaurant",
+            )
+            .get(id=assignment.id)
+        )
+
+        is_active = validated_data["is_active"]
+
+        if is_active:
+            if not assignment.user.is_active:
+                raise serializers.ValidationError({
+                    "is_active": "An inactive user cannot receive branch access."
+                })
+            if assignment.user.profile.role != UserProfile.Role.BRANCH_MANAGER:
+                raise serializers.ValidationError({
+                    "is_active": "Only a Branch Manager assignment can be activated."
+                })
+            if (
+                not assignment.branch.is_active
+                or not assignment.branch.restaurant.is_active
+            ):
+                raise serializers.ValidationError({
+                    "is_active": "The assigned branch and restaurant must be active."
+                })
+            if BranchManagerAssignment.objects.filter(
+                user=assignment.user,
+                is_active=True,
+            ).exclude(id=assignment.id).exists():
+                raise serializers.ValidationError({
+                    "is_active": "This Branch Manager already has another active branch."
+                })
+
+        assignment.is_active = is_active
+        assignment.save(update_fields=["is_active"])
+        return assignment

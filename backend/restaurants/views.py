@@ -1,4 +1,3 @@
-
 from datetime import date, datetime, timedelta
 
 from django.db import transaction
@@ -20,6 +19,9 @@ from accounts.permissions import (
     IsRestaurantManager,
     HasActiveRestaurantAssignment,
     get_managed_restaurant_ids,
+    IsBranchManager,
+    HasActiveBranchAssignment,
+    get_managed_branch_ids,
 )
 
 from .models import (
@@ -28,6 +30,9 @@ from .models import (
     FoodItem,
     RestaurantTable,
     Booking,
+    BranchMenuAvailability,
+    FoodPreorder,
+    FoodPreorderItem,
 )
 
 from .serializers import (
@@ -43,6 +48,10 @@ from .serializers import (
     ManagerFoodItemSerializer,
     ManagerRestaurantTableSerializer,
     ManagerReservationSerializer,
+    BranchManagerContextSerializer,
+    BranchManagerTableSerializer,
+    BranchManagerReservationSerializer,
+    FoodPreorderSerializer,
 )
 
 
@@ -531,6 +540,11 @@ class BookingCreateAPIView(APIView):
             'customer_phone',
             ''
         )
+        
+        special_request = request.data.get(
+            'special_request',
+            ''
+        ).strip()
 
 
         # ---------------------------------------------------------------------
@@ -682,6 +696,7 @@ class BookingCreateAPIView(APIView):
                 guest_count=guest_count,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
+                special_request=special_request,
                 status='CONFIRMED',
             )
 
@@ -2204,3 +2219,621 @@ class ManagerDashboardAPIView(APIView):
             data,
             status=status.HTTP_200_OK,
         )
+
+
+# =============================================================================
+# BRANCH MANAGER API
+# =============================================================================
+BRANCH_MANAGER_PERMISSIONS = [
+    IsAuthenticated,
+    IsBranchManager,
+    HasActiveBranchAssignment,
+]
+
+
+def _branch_manager_branch(request):
+    ids = list(get_managed_branch_ids(request.user))
+    if len(ids) != 1:
+        return None
+    try:
+        return Branch.objects.select_related("restaurant").get(
+            id=ids[0],
+            is_active=True,
+            restaurant__is_active=True,
+        )
+    except Branch.DoesNotExist:
+        return None
+
+
+class BranchManagerContextAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(BranchManagerContextSerializer(branch).data)
+
+    def patch(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        allowed = {"address", "phone", "opening_time", "closing_time"}
+        payload = {
+            k: v for k, v in request.data.items()
+            if k in allowed
+        }
+        serializer = BranchManagerContextSerializer(
+            branch, data=payload, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class BranchManagerDashboardAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        today = date.today()
+        bookings = Booking.objects.filter(branch=branch)
+        tables = RestaurantTable.objects.filter(branch=branch)
+        preorders = FoodPreorder.objects.filter(booking__branch=branch)
+        return Response({
+            "branch": BranchManagerContextSerializer(branch).data,
+            "reservations": {
+                "total": bookings.count(),
+                "today": bookings.filter(reservation_date=today).count(),
+                "pending": bookings.filter(status="PENDING").count(),
+                "confirmed": bookings.filter(status="CONFIRMED").count(),
+            },
+            "tables": {
+                "total": tables.count(),
+                "active": tables.filter(is_active=True).count(),
+            },
+            "preorders": {
+                "total": preorders.count(),
+                "placed": preorders.filter(status="PLACED").count(),
+                "preparing": preorders.filter(status="PREPARING").count(),
+                "ready": preorders.filter(status="READY").count(),
+            },
+        })
+
+
+class BranchManagerReservationListAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        qs = (
+            Booking.objects
+            .filter(branch_id__in=get_managed_branch_ids(request.user))
+            .select_related(
+                "user", "branch",
+                "branch__restaurant", "table",
+            )
+        )
+
+        reservation_status = request.query_params.get("status")
+        if reservation_status:
+            valid = [choice[0] for choice in Booking.STATUS_CHOICES]
+            if reservation_status not in valid:
+                return Response(
+                    {"error": "Invalid reservation status."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(status=reservation_status)
+
+        scope = request.query_params.get("scope")
+        today = date.today()
+        if scope == "today":
+            qs = qs.filter(reservation_date=today)
+        elif scope == "upcoming":
+            qs = qs.filter(reservation_date__gte=today)
+        elif scope == "history":
+            qs = qs.filter(reservation_date__lt=today)
+        elif scope:
+            return Response(
+                {"error": "scope must be today, upcoming, or history."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        search = request.query_params.get("search")
+        if search:
+            qs = qs.filter(
+                Q(customer_name__icontains=search)
+                | Q(customer_phone__icontains=search)
+            )
+
+        qs = qs.order_by("-reservation_date", "-start_time")
+        return Response(
+            BranchManagerReservationSerializer(qs, many=True).data
+        )
+
+
+class BranchManagerReservationStatusAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+    ALLOWED = {
+        "PENDING": {"PENDING", "CONFIRMED", "CANCELLED"},
+        "CONFIRMED": {"CONFIRMED", "COMPLETED", "CANCELLED"},
+        "CANCELLED": {"CANCELLED"},
+        "COMPLETED": {"COMPLETED"},
+    }
+
+    @transaction.atomic
+    def patch(self, request, pk):
+        try:
+            booking = (
+                Booking.objects
+                .select_for_update(of=("self",))
+                .select_related(
+                    "branch", "branch__restaurant", "table",
+                )
+                .get(
+                    id=pk,
+                    branch_id__in=get_managed_branch_ids(request.user),
+                )
+            )
+        except Booking.DoesNotExist:
+            return Response(
+                {"error": "Reservation not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get("status")
+        if new_status not in self.ALLOWED.get(booking.status, set()):
+            return Response(
+                {
+                    "error":
+                    f"Cannot change reservation status "
+                    f"from {booking.status} to {new_status}."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if booking.status != new_status:
+            booking.status = new_status
+            booking.save(update_fields=["status"])
+
+        return Response(
+            BranchManagerReservationSerializer(booking).data
+        )
+
+
+class BranchManagerTableListCreateAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        qs = (
+            RestaurantTable.objects
+            .filter(branch_id__in=get_managed_branch_ids(request.user))
+            .select_related("branch")
+            .order_by("table_number")
+        )
+        return Response(
+            BranchManagerTableSerializer(qs, many=True).data
+        )
+
+    def post(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        payload = request.data.copy()
+        payload.pop("branch_id", None)
+        if RestaurantTable.objects.filter(
+            branch=branch,
+            table_number=payload.get("table_number"),
+        ).exists():
+            return Response(
+                {"error": "Table number already exists in this branch."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = BranchManagerTableSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        table = serializer.save(branch=branch)
+        return Response(
+            BranchManagerTableSerializer(table).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class BranchManagerTableDetailAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def _get(self, request, pk):
+        try:
+            return RestaurantTable.objects.select_related("branch").get(
+                id=pk,
+                branch_id__in=get_managed_branch_ids(request.user),
+            )
+        except RestaurantTable.DoesNotExist:
+            return None
+
+    def patch(self, request, pk):
+        table = self._get(request, pk)
+        if table is None:
+            return Response(
+                {"error": "Table not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        payload = request.data.copy()
+        payload.pop("branch", None)
+        payload.pop("branch_id", None)
+
+        new_number = payload.get("table_number")
+        if (
+            new_number
+            and RestaurantTable.objects.filter(
+                branch=table.branch,
+                table_number=new_number,
+            ).exclude(id=table.id).exists()
+        ):
+            return Response(
+                {"error": "Table number already exists in this branch."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = BranchManagerTableSerializer(
+            table, data=payload, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        table = self._get(request, pk)
+        if table is None:
+            return Response(
+                {"error": "Table not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        table.is_active = False
+        table.save(update_fields=["is_active"])
+        return Response({"message": "Table deactivated successfully."})
+
+
+class BranchManagerMenuAvailabilityAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        overrides = {
+            row.food_item_id: row.is_available
+            for row in BranchMenuAvailability.objects.filter(branch=branch)
+        }
+        items = FoodItem.objects.filter(
+            restaurant=branch.restaurant
+        ).order_by("category", "name")
+
+        return Response([
+            {
+                "food_item_id": item.id,
+                "name": item.name,
+                "category": item.category,
+                "description": item.description,
+                "price": item.price,
+                "image_url": item.image_url,
+                "restaurant_available": item.is_available,
+                "branch_available": overrides.get(
+                    item.id, item.is_available
+                ),
+            }
+            for item in items
+        ])
+
+    def patch(self, request):
+        branch = _branch_manager_branch(request)
+        if branch is None:
+            return Response(
+                {"error": "No active branch assignment was found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        food_item_id = request.data.get("food_item_id")
+        if food_item_id is None or "is_available" not in request.data:
+            return Response(
+                {"error": "food_item_id and is_available are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            food_item = FoodItem.objects.get(
+                id=food_item_id,
+                restaurant=branch.restaurant,
+            )
+        except FoodItem.DoesNotExist:
+            return Response(
+                {"error": "Menu item not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        row, _ = BranchMenuAvailability.objects.update_or_create(
+            branch=branch,
+            food_item=food_item,
+            defaults={
+                "is_available": bool(request.data["is_available"]),
+            },
+        )
+        return Response({
+            "food_item_id": food_item.id,
+            "branch_available": row.is_available,
+        })
+
+
+class FoodPreorderCreateUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, booking_id):
+        try:
+            booking = (
+                Booking.objects
+                .select_for_update()
+                .select_related("branch", "branch__restaurant")
+                .get(id=booking_id, user=request.user)
+            )
+        except Booking.DoesNotExist:
+            return Response(
+                {"error": "Booking not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        raw_items = request.data.get("items", [])
+        if not isinstance(raw_items, list) or not raw_items:
+            return Response(
+                {"error": "At least one food item is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalized = []
+        total = 0
+        seen = set()
+
+        for raw in raw_items:
+            try:
+                food_item_id = int(raw.get("food_item_id"))
+                quantity = int(raw.get("quantity", 1))
+            except (TypeError, ValueError):
+                return Response(
+                    {"error": "Invalid food item or quantity."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if quantity < 1 or food_item_id in seen:
+                return Response(
+                    {"error": "Food items must have positive unique quantities."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            seen.add(food_item_id)
+
+            try:
+                item = FoodItem.objects.get(
+                    id=food_item_id,
+                    restaurant=booking.branch.restaurant,
+                    is_available=True,
+                )
+            except FoodItem.DoesNotExist:
+                return Response(
+                    {"error": f"Food item #{food_item_id} is unavailable."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            override = BranchMenuAvailability.objects.filter(
+                branch=booking.branch,
+                food_item=item,
+            ).first()
+            if override and not override.is_available:
+                return Response(
+                    {"error": f"{item.name} is unavailable at this branch."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            total += item.price * quantity
+            normalized.append((item, quantity))
+
+        preorder, _ = FoodPreorder.objects.update_or_create(
+            booking=booking,
+            defaults={
+                "status": "PLACED",
+                "total_amount": total,
+                "advance_amount": request.data.get(
+                    "advance_amount", total / 2
+                ),
+                "payment_status": request.data.get(
+                    "payment_status", "ADVANCE_PAID"
+                ),
+                "payment_method": request.data.get(
+                    "payment_method", ""
+                ),
+                "transaction_id": request.data.get(
+                    "transaction_id", ""
+                ),
+                "special_request": request.data.get(
+                    "special_request", ""
+                ),
+            },
+        )
+
+        preorder.items.all().delete()
+        FoodPreorderItem.objects.bulk_create([
+            FoodPreorderItem(
+                preorder=preorder,
+                food_item=item,
+                quantity=quantity,
+                unit_price=item.price,
+            )
+            for item, quantity in normalized
+        ])
+
+        preorder.refresh_from_db()
+        return Response(
+            FoodPreorderSerializer(preorder).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class BranchManagerPreorderListAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        qs = (
+            FoodPreorder.objects
+            .filter(
+                booking__branch_id__in=get_managed_branch_ids(
+                    request.user
+                )
+            )
+            .select_related(
+                "booking", "booking__branch",
+                "booking__branch__restaurant",
+                "booking__table",
+            )
+            .prefetch_related("items", "items__food_item")
+        )
+
+        preorder_status = request.query_params.get("status")
+        if preorder_status:
+            valid = [
+                choice[0]
+                for choice in FoodPreorder.STATUS_CHOICES
+            ]
+            if preorder_status not in valid:
+                return Response(
+                    {"error": "Invalid preorder status."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(status=preorder_status)
+
+        return Response(
+            FoodPreorderSerializer(
+                qs.order_by("-created_at"),
+                many=True,
+            ).data
+        )
+
+
+class BranchManagerPreorderStatusAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+    ALLOWED = {
+        "PLACED": {"PLACED", "PREPARING", "CANCELLED"},
+        "PREPARING": {"PREPARING", "READY", "CANCELLED"},
+        "READY": {"READY", "COMPLETED"},
+        "COMPLETED": {"COMPLETED"},
+        "CANCELLED": {"CANCELLED"},
+    }
+
+    @transaction.atomic
+    def patch(self, request, pk):
+        try:
+            preorder = (
+                FoodPreorder.objects
+                .select_for_update()
+                .select_related(
+                    "booking", "booking__branch",
+                    "booking__branch__restaurant",
+                    "booking__table",
+                )
+                .prefetch_related("items", "items__food_item")
+                .get(
+                    id=pk,
+                    booking__branch_id__in=get_managed_branch_ids(
+                        request.user
+                    ),
+                )
+            )
+        except FoodPreorder.DoesNotExist:
+            return Response(
+                {"error": "Food pre-order not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        new_status = request.data.get("status")
+        if new_status not in self.ALLOWED.get(preorder.status, set()):
+            return Response(
+                {
+                    "error":
+                    f"Cannot change pre-order status "
+                    f"from {preorder.status} to {new_status}."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if preorder.status != new_status:
+            preorder.status = new_status
+            preorder.save(update_fields=["status", "updated_at"])
+
+        return Response(FoodPreorderSerializer(preorder).data)
+
+
+class BranchManagerNotificationsAPIView(APIView):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def get(self, request):
+        branch_ids = get_managed_branch_ids(request.user)
+
+        bookings = (
+            Booking.objects
+            .filter(branch_id__in=branch_ids)
+            .select_related("table")
+            .order_by("-created_at")[:10]
+        )
+        preorders = (
+            FoodPreorder.objects
+            .filter(booking__branch_id__in=branch_ids)
+            .select_related("booking")
+            .order_by("-updated_at")[:10]
+        )
+
+        events = []
+        for booking in bookings:
+            events.append({
+                "id": f"booking-{booking.id}",
+                "kind": "reservation",
+                "title": f"Reservation #{booking.id}",
+                "message": (
+                    f"{booking.customer_name or 'Customer'} · "
+                    f"{booking.guest_count} guests · "
+                    f"Table {booking.table.table_number} · "
+                    f"{booking.status}"
+                ),
+                "timestamp": booking.created_at,
+            })
+
+        for preorder in preorders:
+            events.append({
+                "id": f"preorder-{preorder.id}",
+                "kind": "preorder",
+                "title": f"Food pre-order #{preorder.id}",
+                "message": (
+                    f"Booking #{preorder.booking_id} · "
+                    f"{preorder.status} · "
+                    f"৳{preorder.total_amount}"
+                ),
+                "timestamp": preorder.updated_at,
+            })
+
+        events.sort(key=lambda x: x["timestamp"], reverse=True)
+        return Response(events[:20])
