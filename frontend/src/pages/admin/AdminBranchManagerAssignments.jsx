@@ -36,7 +36,33 @@ function AdminBranchManagerAssignments() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    let isCancelled = false
+
+    Promise.all([
+      getPlatformAdminProfile(),
+      getPlatformAdminUsers(),
+      getRestaurantsForAdminAssignment(),
+      getPlatformAdminBranchManagerAssignments(),
+    ])
+      .then(([p, u, r, a]) => {
+        if (!isCancelled) {
+          setProfile(p)
+          setUsers(u)
+          setRestaurants(r)
+          setAssignments(a)
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          setMessage({ type: 'error', text: err.message })
+        }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
 
   const managers = users.filter(
     (user) => user.role === 'BRANCH_MANAGER' && user.is_active,

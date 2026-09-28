@@ -44,7 +44,7 @@ function Profile() {
 
                 setUser(data)
 
-            } catch (error) {
+            } catch {
 
                 setError(
                     'Unable to load your profile information.'

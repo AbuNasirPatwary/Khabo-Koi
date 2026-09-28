@@ -41,7 +41,7 @@ function MyBookings() {
 
                 }
 
-            } catch (error) {
+            } catch {
 
                 setError(
                     'Unable to load your bookings.'

@@ -7,6 +7,7 @@ import {
   loginForProductRole,
   readJsonResponse,
 } from './adminApi'
+import { createAnalyticsQuery } from '../utils/analytics'
 
 
 export const MANAGER_AUTH_EXPIRED_EVENT = AUTH_EXPIRED_EVENT
@@ -94,9 +95,10 @@ function jsonOptions(method, body) {
 }
 
 
-export function getManagerDashboard() {
+export function getManagerDashboard(filters = {}) {
+  const query = createAnalyticsQuery(filters)
   return managerRequest(
-    'dashboard/',
+    `dashboard/?${query}`,
     'Unable to load the Manager dashboard.',
   )
 }

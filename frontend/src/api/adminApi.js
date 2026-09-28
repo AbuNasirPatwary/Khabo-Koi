@@ -1,3 +1,6 @@
+import { createAnalyticsQuery } from '../utils/analytics'
+
+
 export const API_URL = (
   import.meta.env.VITE_API_URL
   || 'http://127.0.0.1:8000/api'
@@ -298,9 +301,10 @@ export async function getPlatformAdminProfile() {
 }
 
 
-export async function getPlatformAdminDashboard() {
+export async function getPlatformAdminDashboard(filters = {}) {
+  const query = createAnalyticsQuery(filters)
   const response = await authenticatedFetch(
-    `${API_URL}/accounts/admin/dashboard/`,
+    `${API_URL}/accounts/admin/dashboard/?${query}`,
   )
 
   return readJsonResponse(

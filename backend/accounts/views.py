@@ -8,7 +8,12 @@ from rest_framework.views import APIView
 from restaurants.models import (
     Booking,
     Branch,
+    FoodPreorder,
     Restaurant,
+)
+from restaurants.analytics import (
+    AnalyticsPeriodError,
+    build_dashboard_analytics,
 )
 
 from .models import (
@@ -295,9 +300,9 @@ class PlatformAdminAccountStatusView(
 # =============================================================================
 # GET /api/accounts/admin/dashboard/
 #
-# The six values map naturally to dashboard summary cards while remaining
-# grounded in models that already exist. Approval and payment metrics will be
-# added only after those domain models are designed and migrated.
+# Existing summary cards remain stable for current clients. The additive
+# analytics payload uses persisted bookings and food preorders, while clearly
+# treating the current payment values as recorded rather than gateway-verified.
 # =============================================================================
 
 class PlatformAdminDashboardView(APIView):
@@ -360,8 +365,25 @@ class PlatformAdminDashboardView(APIView):
             }
         )
 
+        try:
+            analytics = build_dashboard_analytics(
+                query_params=request.query_params,
+                bookings=Booking.objects.all(),
+                preorders=FoodPreorder.objects.all(),
+                branches=Branch.objects.all(),
+            )
+        except AnalyticsPeriodError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Existing summary fields remain stable for current frontend clients.
+        dashboard_data = dict(serializer.data)
+        dashboard_data["analytics"] = analytics
+
         return Response(
-            serializer.data,
+            dashboard_data,
             status=status.HTTP_200_OK,
         )
 

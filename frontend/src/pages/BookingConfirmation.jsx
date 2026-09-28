@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import Navbar from '../components/Navbar'
@@ -56,41 +56,25 @@ function BookingConfirmation() {
     const location = useLocation()
     const navigate = useNavigate()
 
-    const [confirmation, setConfirmation] =
-        useState(
-            location.state?.confirmation ||
-            null
-        )
-
-
-    useEffect(() => {
-
-        if (confirmation) return
-
-
-        const saved =
-            sessionStorage.getItem(
-                'khabo_koi_confirmation_context'
-            )
-
-
-        if (saved) {
-
-            try {
-
-                setConfirmation(
-                    JSON.parse(saved)
-                )
-
-            } catch {
-
-                setConfirmation(null)
-
-            }
-
+    // Restore the confirmation once during the first render. Reading it in a
+    // lazy initializer avoids an unnecessary state-setting effect.
+    const [confirmation] = useState(() => {
+        if (location.state?.confirmation) {
+            return location.state.confirmation
         }
 
-    }, [confirmation])
+        const saved = sessionStorage.getItem(
+            'khabo_koi_confirmation_context'
+        )
+
+        if (!saved) return null
+
+        try {
+            return JSON.parse(saved)
+        } catch {
+            return null
+        }
+    })
 
 
     if (!confirmation) {

@@ -1,30 +1,38 @@
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { updateBranchManagerContext } from '../../api/branchManagerApi'
 import BranchManagerLayout from '../../components/branchManager/BranchManagerLayout'
 import useBranchManagerShell from '../../components/branchManager/useBranchManagerShell'
 
 function BranchManagerProfile() {
   const { profile, branch, setBranch, shellError } = useBranchManagerShell()
-  const [form, setForm] = useState(null)
+  const [formChanges, setFormChanges] = useState(null)
   const [message, setMessage] = useState({ type: '', text: '' })
 
-  useEffect(() => {
-    if (branch) {
-      setForm({
+  // Until the user edits a field, derive the form directly from the latest
+  // branch context. This removes the need to mirror props into state.
+  const form = branch
+    ? formChanges || {
         address: branch.address || '',
         phone: branch.phone || '',
         opening_time: (branch.opening_time || '').slice(0, 5),
         closing_time: (branch.closing_time || '').slice(0, 5),
-      })
-    }
-  }, [branch])
+      }
+    : null
+
+  function updateField(field, value) {
+    setFormChanges({
+      ...form,
+      [field]: value,
+    })
+  }
 
   async function save(event) {
     event.preventDefault()
     try {
       const updated = await updateBranchManagerContext(form)
       setBranch(updated)
+      setFormChanges(null)
       setMessage({ type: 'success', text: 'Branch profile updated.' })
     } catch (err) {
       setMessage({ type: 'error', text: err.message })
@@ -51,10 +59,10 @@ function BranchManagerProfile() {
 
           {form && (
             <form onSubmit={save} className="mt-7 grid gap-5 md:grid-cols-2">
-              <label className="text-sm font-semibold">Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
-              <label className="text-sm font-semibold">Address<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
-              <label className="text-sm font-semibold">Opening time<input type="time" value={form.opening_time} onChange={(e) => setForm({ ...form, opening_time: e.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
-              <label className="text-sm font-semibold">Closing time<input type="time" value={form.closing_time} onChange={(e) => setForm({ ...form, closing_time: e.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
+              <label className="text-sm font-semibold">Phone<input value={form.phone} onChange={(e) => updateField('phone', e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
+              <label className="text-sm font-semibold">Address<input value={form.address} onChange={(e) => updateField('address', e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
+              <label className="text-sm font-semibold">Opening time<input type="time" value={form.opening_time} onChange={(e) => updateField('opening_time', e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
+              <label className="text-sm font-semibold">Closing time<input type="time" value={form.closing_time} onChange={(e) => updateField('closing_time', e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal" /></label>
               <button className="rounded-xl bg-orange-500 px-5 py-3 font-bold text-white md:col-span-2 md:w-fit">Save branch details</button>
             </form>
           )}
