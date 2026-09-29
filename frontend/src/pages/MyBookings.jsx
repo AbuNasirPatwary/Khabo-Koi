@@ -106,6 +106,41 @@ function MyBookings() {
 
     }
 
+    function isWithinOneHour(booking) {
+
+        if (
+            !booking?.reservation_date ||
+            !booking?.start_time
+        ) {
+            return false
+        }
+
+        if (
+            booking.status?.toUpperCase()
+            !== 'CONFIRMED'
+        ) {
+            return false
+        }
+
+        const reservationDateTime = new Date(
+            `${booking.reservation_date}T${booking.start_time}`
+        )
+
+        const now = new Date()
+
+        const difference =
+            reservationDateTime.getTime()
+            - now.getTime()
+
+        const oneHour =
+            60 * 60 * 1000
+
+        return (
+            difference > 0 &&
+            difference <= oneHour
+        )
+    }
+
 
     function getStatusClasses(status) {
 
@@ -428,6 +463,26 @@ function MyBookings() {
                                             {/* DETAILS SIDE */}
 
                                             <div className="p-7">
+
+                                                {isWithinOneHour(booking) && (
+                                                    <div className="mb-5 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 text-orange-800">
+                                                        <p className="text-sm font-extrabold">
+                                                            Reservation Reminder
+                                                        </p>
+
+                                                        <p className="mt-1 text-sm">
+                                                            Your reservation at{' '}
+                                                            <span className="font-bold">
+                                                                {booking.restaurant_name}
+                                                            </span>{' '}
+                                                            is at{' '}
+                                                            <span className="font-bold">
+                                                                {formatTime(booking.start_time)}
+                                                            </span>
+                                                            . Less than 1 hour remaining.
+                                                        </p>
+                                                    </div>
+                                                )}
 
                                                 <p className="text-sm font-bold text-gray-900">
                                                     Reservation Details
