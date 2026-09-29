@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   createManagerTable,
@@ -9,6 +9,9 @@ import {
   updateManagerTable,
 } from '../../api/managerApi'
 import ManagerLayout from '../../components/manager/ManagerLayout'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 const emptyTable = {
@@ -26,6 +29,9 @@ function ManagerTables() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingDeactivate, setPendingDeactivate] = useState(null)
 
   useEffect(() => {
     let isCancelled = false
@@ -97,12 +103,23 @@ function ManagerTables() {
     }
   }
 
-  async function deactivate(table) {
-    if (!window.confirm(`Deactivate table ${table.table_number}?`)) return
+  const filteredTables = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return !query ? tables : tables.filter((table) => (
+      [table.table_number, table.branch_name, table.restaurant_name, table.seating_type]
+        .some((value) => String(value || '').toLowerCase().includes(query))
+    ))
+  }, [search, tables])
+  const safePage = clampPage(currentPage, filteredTables.length)
+  const visibleTables = paginateItems(filteredTables, safePage)
+
+  async function deactivate() {
+    if (!pendingDeactivate) return
     try {
-      await deactivateManagerTable(table.id)
-      setTables((current) => current.map((item) => item.id === table.id ? { ...item, is_active: false } : item))
+      await deactivateManagerTable(pendingDeactivate.id)
+      setTables((current) => current.map((item) => item.id === pendingDeactivate.id ? { ...item, is_active: false } : item))
       setMessage({ type: 'success', text: 'Table deactivated.' })
+      setPendingDeactivate(null)
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
     }
@@ -129,9 +146,12 @@ function ManagerTables() {
         </form>
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {isLoading ? <p className="p-12 text-center text-sm text-slate-500">Loading tables...</p> : tables.length === 0 ? <p className="p-12 text-center text-sm text-slate-500">No tables have been created.</p> : <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Table</th><th className="px-5 py-3">Branch</th><th className="px-5 py-3">Capacity</th><th className="px-5 py-3">Seating</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{tables.map((table) => <tr key={table.id}><td className="px-5 py-4 font-bold">{table.table_number}</td><td className="px-5 py-4">{table.restaurant_name}<p className="text-xs text-slate-500">{table.branch_name}</p></td><td className="px-5 py-4">{table.capacity}</td><td className="px-5 py-4">{table.seating_type}</td><td className="px-5 py-4">{table.is_active ? 'Active' : 'Inactive'}</td><td className="px-5 py-4"><div className="flex gap-2"><button type="button" onClick={() => startEditing(table)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{table.is_active && <button type="button" onClick={() => deactivate(table)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}</div></td></tr>)}</tbody></table></div>}
+          <label className="block border-b border-slate-200 p-5"><span className="sr-only">Search tables</span><input value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1) }} placeholder="Search table, branch, or seating type" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" /></label>
+          {isLoading ? <p className="p-12 text-center text-sm text-slate-500">Loading tables...</p> : filteredTables.length === 0 ? <p className="p-12 text-center text-sm text-slate-500">No tables match your search.</p> : <div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Table</th><th className="px-5 py-3">Branch</th><th className="px-5 py-3">Capacity</th><th className="px-5 py-3">Seating</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleTables.map((table) => <tr key={table.id}><td className="px-5 py-4 font-bold">{table.table_number}</td><td className="px-5 py-4">{table.restaurant_name}<p className="text-xs text-slate-500">{table.branch_name}</p></td><td className="px-5 py-4">{table.capacity}</td><td className="px-5 py-4">{table.seating_type}</td><td className="px-5 py-4">{table.is_active ? 'Active' : 'Inactive'}</td><td className="px-5 py-4"><div className="flex gap-2"><button type="button" onClick={() => startEditing(table)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{table.is_active && <button type="button" onClick={() => setPendingDeactivate(table)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}</div></td></tr>)}</tbody></table></div>}
+          <PaginationControls currentPage={safePage} itemCount={filteredTables.length} onPageChange={setCurrentPage} itemLabel="tables" />
         </section>
       </main>
+      {pendingDeactivate && <ConfirmDialog title="Deactivate this table?" description={`Table ${pendingDeactivate.table_number} will stop accepting new reservations.`} confirmLabel="Deactivate" isSaving={false} onCancel={() => setPendingDeactivate(null)} onConfirm={deactivate} />}
     </ManagerLayout>
   )
 }

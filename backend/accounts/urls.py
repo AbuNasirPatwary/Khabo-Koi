@@ -1,10 +1,12 @@
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    EmailVerificationConfirmView,
+    EmailVerificationRequestView,
+    LoginView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
     PlatformAdminAccountStatusView,
     PlatformAdminBranchManagerAssignmentListCreateView,
     PlatformAdminBranchManagerAssignmentStatusView,
@@ -29,8 +31,32 @@ urlpatterns = [
     # JWT authentication and access-token renewal.
     path(
         "login/",
-        TokenObtainPairView.as_view(),
+        LoginView.as_view(),
         name="login",
+    ),
+
+    path(
+        "password-reset/",
+        PasswordResetRequestView.as_view(),
+        name="password_reset_request",
+    ),
+
+    path(
+        "password-reset/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+
+    path(
+        "email-verification/",
+        EmailVerificationRequestView.as_view(),
+        name="email_verification_request",
+    ),
+
+    path(
+        "email-verification/confirm/",
+        EmailVerificationConfirmView.as_view(),
+        name="email_verification_confirm",
     ),
 
     path(

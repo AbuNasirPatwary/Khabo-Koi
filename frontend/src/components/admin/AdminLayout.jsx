@@ -24,14 +24,24 @@ const navigationItems = [
     to: '/platform-admin/users',
   },
   {
-    label: 'Manager Access',
-    symbol: 'M',
+    label: 'Restaurant Managers',
+    symbol: 'RM',
     to: '/platform-admin/manager-assignments',
+  },
+  {
+    label: 'Branch Managers',
+    symbol: 'BM',
+    to: '/platform-admin/branch-manager-assignments',
   },
   {
     label: 'Bookings',
     symbol: 'B',
     to: '/platform-admin/bookings',
+  },
+  {
+    label: 'Operational History',
+    symbol: 'H',
+    to: '/platform-admin/operations/history',
   },
   {
     label: 'System Settings',

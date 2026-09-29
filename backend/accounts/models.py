@@ -78,6 +78,20 @@ class UserProfile(models.Model):
         default=Role.CUSTOMER,
     )
 
+    # Email verification is product-level state, so it lives on the profile
+    # instead of changing Django's built-in User model. Existing accounts stay
+    # usable while the project gradually adopts verified-email features.
+    email_verified = models.BooleanField(
+        default=False,
+    )
+
+    # Keeping the timestamp makes verification auditable without affecting the
+    # existing login flow. It remains empty until a valid token is confirmed.
+    email_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     # Recorded once when the profile is created.
     created_at = models.DateTimeField(
         auto_now_add=True,

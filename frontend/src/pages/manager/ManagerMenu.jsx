@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   createManagerMenuItem,
@@ -8,6 +8,9 @@ import {
   updateManagerMenuItem,
 } from '../../api/managerApi'
 import ManagerLayout from '../../components/manager/ManagerLayout'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 const emptyItem = {
@@ -24,6 +27,9 @@ function ManagerMenu() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingDeactivate, setPendingDeactivate] = useState(null)
 
   useEffect(() => {
     let isCancelled = false
@@ -90,12 +96,23 @@ function ManagerMenu() {
     }
   }
 
-  async function deactivate(item) {
-    if (!window.confirm(`Mark ${item.name} unavailable?`)) return
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return !query ? items : items.filter((item) => (
+      [item.name, item.category, item.restaurant_name]
+        .some((value) => value?.toLowerCase().includes(query))
+    ))
+  }, [items, search])
+  const safePage = clampPage(currentPage, filteredItems.length)
+  const visibleItems = paginateItems(filteredItems, safePage)
+
+  async function deactivate() {
+    if (!pendingDeactivate) return
     try {
-      await deactivateManagerMenuItem(item.id)
-      setItems((current) => current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, is_available: false } : currentItem))
+      await deactivateManagerMenuItem(pendingDeactivate.id)
+      setItems((current) => current.map((currentItem) => currentItem.id === pendingDeactivate.id ? { ...currentItem, is_available: false } : currentItem))
       setMessage({ type: 'success', text: 'Menu item marked unavailable.' })
+      setPendingDeactivate(null)
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
     }
@@ -122,10 +139,14 @@ function ManagerMenu() {
           <button disabled={isSaving || !form.restaurant_id} className="mt-5 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{isSaving ? 'Saving...' : editingId ? 'Save changes' : 'Create menu item'}</button>
         </form>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {isLoading ? <p className="text-sm text-slate-500">Loading menu...</p> : items.map((item) => <article key={item.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{item.image_url ? <img src={item.image_url} alt="" className="h-36 w-full object-cover" /> : <div className="flex h-36 items-center justify-center bg-slate-100 text-4xl font-bold text-slate-300">{item.name.slice(0, 1)}</div>}<div className="p-5"><div className="flex justify-between gap-3"><div><p className="text-xs font-bold uppercase text-orange-600">{item.restaurant_name} · {item.category}</p><h3 className="mt-1 text-lg font-bold">{item.name}</h3></div><span className="font-bold text-slate-900">৳{item.price}</span></div><p className="mt-2 line-clamp-2 text-sm text-slate-500">{item.description || 'No description'}</p><p className={`mt-3 text-xs font-bold ${item.is_available ? 'text-emerald-700' : 'text-slate-400'}`}>{item.is_available ? 'Available' : 'Unavailable'}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => startEditing(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{item.is_available && <button type="button" onClick={() => deactivate(item)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Make unavailable</button>}</div></div></article>)}
+        <label className="mt-6 block"><span className="sr-only">Search menu</span><input value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1) }} placeholder="Search menu item, category, or restaurant" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" /></label>
+        <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {isLoading ? <p className="text-sm text-slate-500">Loading menu...</p> : visibleItems.map((item) => <article key={item.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{item.image_url ? <img src={item.image_url} alt="" className="h-36 w-full object-cover" /> : <div className="flex h-36 items-center justify-center bg-slate-100 text-4xl font-bold text-slate-300">{item.name.slice(0, 1)}</div>}<div className="p-5"><div className="flex justify-between gap-3"><div><p className="text-xs font-bold uppercase text-orange-600">{item.restaurant_name} · {item.category}</p><h3 className="mt-1 text-lg font-bold">{item.name}</h3></div><span className="font-bold text-slate-900">৳{item.price}</span></div><p className="mt-2 line-clamp-2 text-sm text-slate-500">{item.description || 'No description'}</p><p className={`mt-3 text-xs font-bold ${item.is_available ? 'text-emerald-700' : 'text-slate-400'}`}>{item.is_available ? 'Available' : 'Unavailable'}</p><div className="mt-4 flex gap-2"><button type="button" onClick={() => startEditing(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{item.is_available && <button type="button" onClick={() => setPendingDeactivate(item)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Make unavailable</button>}</div></div></article>)}
         </section>
+        {!isLoading && filteredItems.length === 0 && <p className="mt-4 rounded-xl bg-white p-8 text-center text-sm text-slate-500">No menu items match your search.</p>}
+        <PaginationControls currentPage={safePage} itemCount={filteredItems.length} onPageChange={setCurrentPage} itemLabel="menu items" />
       </main>
+      {pendingDeactivate && <ConfirmDialog title="Make this item unavailable?" description={`${pendingDeactivate.name} will no longer be available to customers.`} confirmLabel="Make unavailable" isSaving={false} onCancel={() => setPendingDeactivate(null)} onConfirm={deactivate} />}
     </ManagerLayout>
   )
 }

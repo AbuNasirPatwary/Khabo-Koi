@@ -6,12 +6,17 @@ import {
 } from '../../api/branchManagerApi'
 import BranchManagerLayout from '../../components/branchManager/BranchManagerLayout'
 import useBranchManagerShell from '../../components/branchManager/useBranchManagerShell'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 function BranchManagerMenu() {
   const { profile, branch } = useBranchManagerShell()
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
   const [message, setMessage] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingItem, setPendingItem] = useState(null)
 
   useEffect(() => {
     getBranchManagerMenu().then(setItems).catch((err) => setMessage(err.message))
@@ -25,17 +30,22 @@ function BranchManagerMenu() {
     ))
   }, [items, search])
 
-  async function toggle(item) {
+  const safePage = clampPage(currentPage, visible.length)
+  const pageItems = paginateItems(visible, safePage)
+
+  async function toggle() {
+    if (!pendingItem) return
     try {
       const updated = await updateBranchMenuAvailability(
-        item.food_item_id,
-        !item.branch_available,
+        pendingItem.food_item_id,
+        !pendingItem.branch_available,
       )
       setItems((current) => current.map((row) => (
-        row.food_item_id === item.food_item_id
+        row.food_item_id === pendingItem.food_item_id
           ? { ...row, branch_available: updated.branch_available }
           : row
       )))
+      setPendingItem(null)
     } catch (err) {
       setMessage(err.message)
     }
@@ -54,13 +64,13 @@ function BranchManagerMenu() {
             <h2 className="text-3xl font-bold">Branch-local availability</h2>
             <p className="mt-2 text-sm text-slate-500">The Restaurant Manager owns the master menu. You control only whether each existing item is available at this branch.</p>
           </div>
-          <input placeholder="Search menu" value={search} onChange={(e) => setSearch(e.target.value)} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+          <input placeholder="Search menu" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1) }} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" />
         </div>
 
         {message && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{message}</div>}
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map((item) => (
+          {pageItems.map((item) => (
             <article key={item.food_item_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-bold uppercase text-orange-600">{item.category}</p>
               <div className="mt-2 flex justify-between gap-4">
@@ -69,14 +79,17 @@ function BranchManagerMenu() {
               </div>
               <div className="mt-5 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
                 <div><p className="text-sm font-semibold">Available at branch</p>{!item.restaurant_available && <p className="text-xs text-red-600">Disabled by Restaurant Manager</p>}</div>
-                <button type="button" disabled={!item.restaurant_available} onClick={() => toggle(item)} className={`relative h-7 w-12 rounded-full transition ${item.branch_available && item.restaurant_available ? 'bg-emerald-600' : 'bg-slate-300'} disabled:opacity-50`}>
+                <button type="button" aria-label={`Change availability for ${item.name}`} disabled={!item.restaurant_available} onClick={() => setPendingItem(item)} className={`relative h-7 w-12 rounded-full transition ${item.branch_available && item.restaurant_available ? 'bg-emerald-600' : 'bg-slate-300'} disabled:opacity-50`}>
                   <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${item.branch_available && item.restaurant_available ? 'left-6' : 'left-1'}`} />
                 </button>
               </div>
             </article>
           ))}
         </section>
+        {visible.length === 0 && <p className="mt-5 text-center text-sm text-slate-500">No menu items match your search.</p>}
+        <PaginationControls currentPage={safePage} itemCount={visible.length} onPageChange={setCurrentPage} itemLabel="menu items" />
       </main>
+      {pendingItem && <ConfirmDialog eyebrow="Menu availability" title={`${pendingItem.branch_available ? 'Hide' : 'Show'} this item at the branch?`} description={`${pendingItem.name} will be ${pendingItem.branch_available ? 'unavailable' : 'available'} for customers at this branch.`} confirmLabel={pendingItem.branch_available ? 'Make unavailable' : 'Make available'} tone={pendingItem.branch_available ? 'danger' : 'neutral'} onCancel={() => setPendingItem(null)} onConfirm={toggle} />}
     </BranchManagerLayout>
   )
 }

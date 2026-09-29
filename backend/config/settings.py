@@ -139,14 +139,21 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
-
-MAILERS = {
-    "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
-    },
-}
+# Email links are printed to the Django terminal during local development.
+# Deployment can switch to SMTP without code changes by setting environment
+# variables. Never commit real email credentials to the repository.
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    "Khabo-Koi <noreply@khabo-koi.local>",
+)
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:5173",
+).rstrip("/")
 
 # Allow our React Vite frontend to call the Django API during development.
 CORS_ALLOWED_ORIGINS = [
@@ -161,6 +168,21 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
 
     ),
+
+    # Scoped throttles apply only to views that declare a throttle_scope.
+    # Cache-backed counters are suitable for development; production should
+    # use a shared cache so limits work across application instances.
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.ScopedRateThrottle",
+    ),
+
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_login": "30/minute",
+        "auth_register": "10/hour",
+        "password_reset": "10/hour",
+        "email_verification": "10/hour",
+        "booking_create": "30/hour",
+    },
 
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   createManagerBranch,
@@ -8,6 +8,9 @@ import {
   updateManagerBranch,
 } from '../../api/managerApi'
 import ManagerLayout from '../../components/manager/ManagerLayout'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 const emptyBranch = {
@@ -25,6 +28,9 @@ function ManagerBranches() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingDeactivate, setPendingDeactivate] = useState(null)
 
   useEffect(() => {
     let isCancelled = false
@@ -104,12 +110,23 @@ function ManagerBranches() {
     }
   }
 
-  async function deactivate(branch) {
-    if (!window.confirm(`Deactivate ${branch.name}? Existing records will be kept.`)) return
+  const filteredBranches = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return !query ? branches : branches.filter((branch) => (
+      [branch.name, branch.restaurant_name, branch.address]
+        .some((value) => value?.toLowerCase().includes(query))
+    ))
+  }, [branches, search])
+  const safePage = clampPage(currentPage, filteredBranches.length)
+  const visibleBranches = paginateItems(filteredBranches, safePage)
+
+  async function deactivate() {
+    if (!pendingDeactivate) return
     try {
-      await deactivateManagerBranch(branch.id)
-      setBranches((current) => current.map((item) => item.id === branch.id ? { ...item, is_active: false } : item))
+      await deactivateManagerBranch(pendingDeactivate.id)
+      setBranches((current) => current.map((item) => item.id === pendingDeactivate.id ? { ...item, is_active: false } : item))
       setMessage({ type: 'success', text: 'Branch deactivated.' })
+      setPendingDeactivate(null)
     } catch (error) {
       setMessage({ type: 'error', text: error.message })
     }
@@ -162,10 +179,14 @@ function ManagerBranches() {
           <button disabled={isSaving || !form.restaurant_id} className="mt-5 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{isSaving ? 'Saving...' : editingId ? 'Save changes' : 'Create branch'}</button>
         </form>
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-2">
-          {isLoading ? <p className="text-sm text-slate-500">Loading branches...</p> : branches.map((branch) => <article key={branch.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex justify-between gap-4"><div><p className="text-xs font-bold uppercase text-orange-600">{branch.restaurant_name}</p><h3 className="mt-1 text-lg font-bold">{branch.name}</h3><p className="mt-2 text-sm text-slate-500">{branch.address}</p><p className="mt-1 text-sm text-slate-500">{branch.phone} · {branch.opening_time.slice(0, 5)}–{branch.closing_time.slice(0, 5)}</p></div><span className={`h-fit rounded-full px-2.5 py-1 text-xs font-bold ${branch.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{branch.is_active ? 'Active' : 'Inactive'}</span></div><div className="mt-5 flex gap-2"><button type="button" onClick={() => startEditing(branch)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{branch.is_active && <button type="button" onClick={() => deactivate(branch)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}</div></article>)}
+        <label className="mt-6 block"><span className="sr-only">Search branches</span><input value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1) }} placeholder="Search branch, restaurant, or address" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" /></label>
+        <section className="mt-4 grid gap-4 lg:grid-cols-2">
+          {isLoading ? <p className="text-sm text-slate-500">Loading branches...</p> : visibleBranches.map((branch) => <article key={branch.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex justify-between gap-4"><div><p className="text-xs font-bold uppercase text-orange-600">{branch.restaurant_name}</p><h3 className="mt-1 text-lg font-bold">{branch.name}</h3><p className="mt-2 text-sm text-slate-500">{branch.address}</p><p className="mt-1 text-sm text-slate-500">{branch.phone} · {branch.opening_time.slice(0, 5)}–{branch.closing_time.slice(0, 5)}</p></div><span className={`h-fit rounded-full px-2.5 py-1 text-xs font-bold ${branch.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{branch.is_active ? 'Active' : 'Inactive'}</span></div><div className="mt-5 flex gap-2"><button type="button" onClick={() => startEditing(branch)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>{branch.is_active && <button type="button" onClick={() => setPendingDeactivate(branch)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}</div></article>)}
         </section>
+        {!isLoading && filteredBranches.length === 0 && <p className="mt-4 rounded-xl bg-white p-8 text-center text-sm text-slate-500">No branches match your search.</p>}
+        <PaginationControls currentPage={safePage} itemCount={filteredBranches.length} onPageChange={setCurrentPage} itemLabel="branches" />
       </main>
+      {pendingDeactivate && <ConfirmDialog title="Deactivate this branch?" description={`${pendingDeactivate.name} will no longer accept new activity. Existing records will be kept.`} confirmLabel="Deactivate" isSaving={false} onCancel={() => setPendingDeactivate(null)} onConfirm={deactivate} />}
     </ManagerLayout>
   )
 }

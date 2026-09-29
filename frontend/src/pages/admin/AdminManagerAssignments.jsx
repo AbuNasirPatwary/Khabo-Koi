@@ -10,6 +10,8 @@ import {
 } from '../../api/adminApi'
 import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 function AdminManagerAssignments() {
@@ -26,6 +28,7 @@ function AdminManagerAssignments() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingAssignment, setPendingAssignment] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
   const hasInitialLoadError = Boolean(errorMessage && assignments.length === 0)
 
   async function loadPageData({ showLoader = true } = {}) {
@@ -142,6 +145,8 @@ function AdminManagerAssignments() {
         .map((assignment) => assignment.restaurant.id),
     ).size,
   }), [assignments])
+  const safePage = clampPage(currentPage, filteredAssignments.length)
+  const visibleAssignments = paginateItems(filteredAssignments, safePage)
 
   async function handleCreateAssignment(event) {
     event.preventDefault()
@@ -338,7 +343,7 @@ function AdminManagerAssignments() {
               <span className="sr-only">Search assignments</span>
               <input
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => { setSearchTerm(event.target.value); setCurrentPage(1) }}
                 placeholder="Search Manager, email, or restaurant"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-orange-400 focus:bg-white"
               />
@@ -346,7 +351,7 @@ function AdminManagerAssignments() {
             <select
               aria-label="Filter Manager assignments by status"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1) }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
             >
               <option value="ALL">All access</option>
@@ -385,7 +390,7 @@ function AdminManagerAssignments() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredAssignments.map((assignment) => (
+                  {visibleAssignments.map((assignment) => (
                     <tr key={assignment.id} className="hover:bg-slate-50/70">
                       <td className="px-5 py-4">
                         <p className="font-semibold text-slate-900">
@@ -442,6 +447,7 @@ function AdminManagerAssignments() {
               </table>
             </div>
           )}
+          <PaginationControls currentPage={safePage} itemCount={filteredAssignments.length} onPageChange={setCurrentPage} itemLabel="assignments" />
         </section>
       </main>
 

@@ -240,9 +240,19 @@ function Profile() {
                                 </div>
 
 
-                                <div className="rounded-2xl bg-orange-50 px-4 py-2 text-sm font-bold text-orange-600">
-                                    ✓ Verified Account
-                                </div>
+                                {user.email_verified ? (
+                                    <div className="rounded-2xl bg-green-50 px-4 py-2 text-sm font-bold text-green-700">
+                                        ✓ Email verified
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate('/verify-email')}
+                                        className="rounded-2xl bg-orange-50 px-4 py-2 text-sm font-bold text-orange-600 hover:bg-orange-100"
+                                    >
+                                        Verify email
+                                    </button>
+                                )}
 
                             </div>
 

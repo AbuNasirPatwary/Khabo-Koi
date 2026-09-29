@@ -11,6 +11,8 @@ from rest_framework.generics import (
     RetrieveAPIView,
     UpdateAPIView,
 )
+from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -33,6 +35,7 @@ from .models import (
     BranchMenuAvailability,
     FoodPreorder,
     FoodPreorderItem,
+    OperationalStatusHistory,
 )
 from .analytics import (
     AnalyticsPeriodError,
@@ -57,6 +60,7 @@ from .serializers import (
     BranchManagerTableSerializer,
     BranchManagerReservationSerializer,
     FoodPreorderSerializer,
+    OperationalStatusHistorySerializer,
 )
 
 
@@ -73,6 +77,24 @@ from .serializers import (
 # =============================================================================
 
 DEFAULT_BOOKING_DURATION_MINUTES = 90
+
+
+def record_operational_status_change(*, target, actor, old_status):
+    """Create one audit row after a real status transition succeeds."""
+
+    booking = target if isinstance(target, Booking) else target.booking
+    OperationalStatusHistory.objects.create(
+        target_type=(
+            "BOOKING" if isinstance(target, Booking) else "PREORDER"
+        ),
+        booking=target if isinstance(target, Booking) else None,
+        preorder=target if isinstance(target, FoodPreorder) else None,
+        restaurant=booking.branch.restaurant,
+        branch=booking.branch,
+        actor=actor if actor.is_authenticated else None,
+        old_status=old_status,
+        new_status=target.status,
+    )
 
 
 def calculate_end_time(start_time):
@@ -507,6 +529,7 @@ class TableAvailabilityAPIView(APIView):
 class BookingCreateAPIView(APIView):
     
     permission_classes = [IsAuthenticated]
+    throttle_scope = 'booking_create'
 
     def post(self, request):
 
@@ -2124,12 +2147,20 @@ class ManagerReservationStatusAPIView(APIView):
         # Idempotent no-op is allowed.
         if booking.status != new_status:
 
+            old_status = booking.status
+
             booking.status = new_status
 
             booking.save(
                 update_fields=[
                     'status',
                 ]
+            )
+
+            record_operational_status_change(
+                target=booking,
+                actor=request.user,
+                old_status=old_status,
             )
 
         serializer = ManagerReservationSerializer(
@@ -2436,8 +2467,14 @@ class BranchManagerReservationStatusAPIView(APIView):
             )
 
         if booking.status != new_status:
+            old_status = booking.status
             booking.status = new_status
             booking.save(update_fields=["status"])
+            record_operational_status_change(
+                target=booking,
+                actor=request.user,
+                old_status=old_status,
+            )
 
         return Response(
             BranchManagerReservationSerializer(booking).data
@@ -2815,10 +2852,143 @@ class BranchManagerPreorderStatusAPIView(APIView):
             )
 
         if preorder.status != new_status:
+            old_status = preorder.status
             preorder.status = new_status
             preorder.save(update_fields=["status", "updated_at"])
+            record_operational_status_change(
+                target=preorder,
+                actor=request.user,
+                old_status=old_status,
+            )
 
         return Response(FoodPreorderSerializer(preorder).data)
+
+
+class OperationalHistoryPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
+class OperationalStatusHistoryListAPIView(ListAPIView):
+    """Shared, read-only audit feed with server-side filtering."""
+
+    serializer_class = OperationalStatusHistorySerializer
+    pagination_class = OperationalHistoryPagination
+
+    def scoped_queryset(self):
+        raise NotImplementedError
+
+    @staticmethod
+    def _parse_id(value, field_name):
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                {field_name: f"{field_name} must be a valid number."}
+            ) from exc
+
+    def get_queryset(self):
+        queryset = self.scoped_queryset().select_related(
+            "actor",
+            "restaurant",
+            "branch",
+            "booking",
+            "preorder",
+            "preorder__booking",
+        )
+        params = self.request.query_params
+
+        target_type = params.get("target_type", "").upper()
+        if target_type:
+            valid_types = {
+                choice[0]
+                for choice in OperationalStatusHistory.TARGET_CHOICES
+            }
+            if target_type not in valid_types:
+                raise ValidationError({
+                    "target_type": "target_type must be BOOKING or PREORDER."
+                })
+            queryset = queryset.filter(target_type=target_type)
+
+        for parameter in ("old_status", "new_status"):
+            value = params.get(parameter)
+            if value:
+                queryset = queryset.filter(**{parameter: value.upper()})
+
+        # ``status`` is a convenient alias for the resulting status.
+        if params.get("status"):
+            queryset = queryset.filter(
+                new_status=params["status"].upper()
+            )
+
+        for parameter in ("restaurant", "branch", "actor"):
+            value = self._parse_id(params.get(parameter), parameter)
+            if value is not None:
+                queryset = queryset.filter(**{f"{parameter}_id": value})
+
+        for parameter, lookup in (
+            ("from_date", "created_at__date__gte"),
+            ("to_date", "created_at__date__lte"),
+        ):
+            raw_value = params.get(parameter)
+            if raw_value:
+                parsed_value = parse_date(raw_value)
+                if parsed_value is None:
+                    raise ValidationError({
+                        parameter: f"{parameter} must use YYYY-MM-DD format."
+                    })
+                queryset = queryset.filter(**{lookup: parsed_value})
+
+        search = params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(actor__username__icontains=search)
+                | Q(actor__email__icontains=search)
+                | Q(restaurant__name__icontains=search)
+                | Q(branch__name__icontains=search)
+                | Q(booking__customer_name__icontains=search)
+                | Q(preorder__booking__customer_name__icontains=search)
+            )
+
+        return queryset.order_by("-created_at", "-id")
+
+
+class PlatformAdminOperationalHistoryAPIView(
+    OperationalStatusHistoryListAPIView
+):
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+
+    def scoped_queryset(self):
+        return OperationalStatusHistory.objects.all()
+
+
+class ManagerOperationalHistoryAPIView(
+    OperationalStatusHistoryListAPIView
+):
+    permission_classes = [
+        IsAuthenticated,
+        IsRestaurantManager,
+        HasActiveRestaurantAssignment,
+    ]
+
+    def scoped_queryset(self):
+        return OperationalStatusHistory.objects.filter(
+            restaurant_id__in=get_managed_restaurant_ids(self.request.user)
+        )
+
+
+class BranchManagerOperationalHistoryAPIView(
+    OperationalStatusHistoryListAPIView
+):
+    permission_classes = BRANCH_MANAGER_PERMISSIONS
+
+    def scoped_queryset(self):
+        return OperationalStatusHistory.objects.filter(
+            branch_id__in=get_managed_branch_ids(self.request.user)
+        )
 
 
 class BranchManagerNotificationsAPIView(APIView):
