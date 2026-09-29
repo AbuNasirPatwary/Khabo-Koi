@@ -41,6 +41,7 @@ from .analytics import (
     AnalyticsPeriodError,
     build_dashboard_analytics,
 )
+from .ai_assistant import generate_dining_response
 
 from .serializers import (
     RestaurantSerializer,
@@ -3039,3 +3040,34 @@ class BranchManagerNotificationsAPIView(APIView):
 
         events.sort(key=lambda x: x["timestamp"], reverse=True)
         return Response(events[:20])
+
+class AIDiningAssistantAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        message = str(request.data.get("message", "")).strip()
+
+        if not message:
+            return Response(
+                {"detail": "Please enter a message."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(message) > 500:
+            return Response(
+                {"detail": "Message must be 500 characters or fewer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            answer = generate_dining_response(message)
+        except RuntimeError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({
+            "message": message,
+            "answer": answer,
+        })

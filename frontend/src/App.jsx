@@ -49,6 +49,7 @@ import BranchManagerProfile from './pages/branchManager/BranchManagerProfile'
 import BranchManagerNotifications from './pages/branchManager/BranchManagerNotifications'
 import BranchManagerStatusHistory from './pages/branchManager/BranchManagerStatusHistory'
 import ProtectedBranchManagerRoute from './components/branchManager/ProtectedBranchManagerRoute'
+import AIDiningAssistant from './pages/AIDiningAssistant'
 
 
 function App() {
@@ -79,6 +80,11 @@ function App() {
         <Route
           path="/browse-food"
           element={<BrowseFood />}
+        />
+
+        <Route
+          path="/ai-assistant"
+          element={<AIDiningAssistant />}
         />
 
         <Route

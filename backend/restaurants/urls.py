@@ -32,6 +32,7 @@ from .views import (
     BranchManagerPreorderListAPIView,
     BranchManagerPreorderStatusAPIView,
     BranchManagerNotificationsAPIView,
+    AIDiningAssistantAPIView,
     PlatformAdminOperationalHistoryAPIView,
     ManagerOperationalHistoryAPIView,
     BranchManagerOperationalHistoryAPIView,
@@ -42,6 +43,12 @@ urlpatterns = [
 
     # Platform Admin oversight includes inactive restaurants and is protected
     # independently from the public customer-facing restaurant catalogue.
+    path(
+        'ai/assistant/',
+        AIDiningAssistantAPIView.as_view(),
+        name='ai-dining-assistant',
+    ),
+    
     path(
         'admin/restaurants/',
         PlatformAdminRestaurantListAPIView.as_view(),
