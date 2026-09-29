@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 
 import { askDiningAssistant } from '../api/aiApi'
 
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
 
 const EXAMPLE_PROMPTS = [
     'I want a burger under 400 taka in Banani.',
@@ -163,7 +166,36 @@ function AIDiningAssistant() {
                                                 : 'bg-slate-100 text-slate-800'
                                                 }`}
                                         >
-                                            {chatMessage.text}
+                                            {chatMessage.role === 'assistant' ? (
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        table: ({ children }) => (
+                                                            <div className="my-4 overflow-x-auto">
+                                                                <table className="w-full border-collapse text-left text-sm">
+                                                                    {children}
+                                                                </table>
+                                                            </div>
+                                                        ),
+
+                                                        th: ({ children }) => (
+                                                            <th className="border border-slate-300 bg-slate-200 px-3 py-2 font-bold">
+                                                                {children}
+                                                            </th>
+                                                        ),
+
+                                                        td: ({ children }) => (
+                                                            <td className="border border-slate-300 px-3 py-2">
+                                                                {children}
+                                                            </td>
+                                                        ),
+                                                    }}
+                                                >
+                                                    {chatMessage.text}
+                                                </ReactMarkdown>
+                                            ) : (
+                                                chatMessage.text
+                                            )}
                                         </div>
                                     </div>
                                 ))}

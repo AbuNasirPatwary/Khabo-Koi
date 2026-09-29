@@ -103,6 +103,13 @@ function Navbar() {
                         Browse Food
                     </NavLink>
 
+                    <NavLink
+                        to="/ai-assistant"
+                        className={navLinkClass}
+                    >
+                        AI Assistant
+                    </NavLink>
+
 
                     <a
                         href="/#how-it-works"
