@@ -1,9 +1,18 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.mail import send_mail
 from django.db.models import Count, Q
+from django.utils import timezone
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from restaurants.models import (
     Booking,
@@ -23,6 +32,9 @@ from .models import (
 )
 from .permissions import IsPlatformAdmin
 from .serializers import (
+    EmailVerificationConfirmSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     PlatformAdminAccountStatusSerializer,
     PlatformAdminBranchManagerAssignmentCreateSerializer,
     PlatformAdminBranchManagerAssignmentSerializer,
@@ -36,14 +48,44 @@ from .serializers import (
     ProfileSerializer,
     RegisterSerializer,
 )
+from .tokens import email_verification_token
 
 
 User = get_user_model()
 
 
+def _decode_user(uid):
+    """Resolve an opaque URL-safe user id without leaking decode errors."""
+
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        return User.objects.select_related("profile").get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return None
+
+
+def _send_account_email(*, subject, message, recipient):
+    """Use Django's configured mail backend for dev and deployment."""
+
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [recipient],
+        fail_silently=False,
+    )
+
+
+class LoginView(TokenObtainPairView):
+    """JWT login protected from repeated credential guessing."""
+
+    throttle_scope = "auth_login"
+
+
 class RegisterView(generics.CreateAPIView):
 
     serializer_class = RegisterSerializer
+    throttle_scope = "auth_register"
 
     def create(self, request, *args, **kwargs):
 
@@ -69,6 +111,162 @@ class RegisterView(generics.CreateAPIView):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
+class PasswordResetRequestView(APIView):
+    """Email reset links while returning the same result for every address."""
+
+    authentication_classes = []
+    permission_classes = []
+    throttle_scope = "password_reset"
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        users = User.objects.filter(
+            email__iexact=serializer.validated_data["email"],
+            is_active=True,
+        )
+
+        for user in users:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_url = (
+                f"{settings.FRONTEND_URL}/reset-password"
+                f"?uid={uid}&token={token}"
+            )
+            _send_account_email(
+                subject="Reset your Khabo-Koi password",
+                message=(
+                    "Use this one-time link to choose a new password:\n\n"
+                    f"{reset_url}\n\n"
+                    "If you did not request this, you can ignore this email."
+                ),
+                recipient=user.email,
+            )
+
+        return Response({
+            "message": (
+                "If an active account uses that email, a reset link has "
+                "been sent."
+            )
+        })
+
+
+class PasswordResetConfirmView(APIView):
+    """Validate a one-time token before replacing the stored password hash."""
+
+    authentication_classes = []
+    permission_classes = []
+    throttle_scope = "password_reset"
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = _decode_user(serializer.validated_data["uid"])
+
+        if (
+            user is None
+            or not user.is_active
+            or not default_token_generator.check_token(
+                user,
+                serializer.validated_data["token"],
+            )
+        ):
+            return Response(
+                {"detail": "This password reset link is invalid or expired."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_password(
+                serializer.validated_data["new_password"],
+                user=user,
+            )
+        except DjangoValidationError as error:
+            return Response(
+                {"new_password": error.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+
+        return Response({"message": "Password updated successfully."})
+
+
+class EmailVerificationRequestView(APIView):
+    """Send a one-time verification link only for the signed-in account."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "email_verification"
+
+    def post(self, request):
+        user = request.user
+        profile = user.profile
+
+        if user.email and not profile.email_verified:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = email_verification_token.make_token(user)
+            verification_url = (
+                f"{settings.FRONTEND_URL}/verify-email"
+                f"?uid={uid}&token={token}"
+            )
+            _send_account_email(
+                subject="Verify your Khabo-Koi email",
+                message=(
+                    "Use this one-time link to verify your email address:\n\n"
+                    f"{verification_url}\n\n"
+                    "If you did not request this, you can ignore this email."
+                ),
+                recipient=user.email,
+            )
+
+        # This deliberately does not reveal whether the account has an email
+        # or is already verified.
+        return Response({
+            "message": "If verification is needed, an email has been sent."
+        })
+
+
+class EmailVerificationConfirmView(APIView):
+    """Mark the address verified after checking its one-time token."""
+
+    authentication_classes = []
+    permission_classes = []
+    throttle_scope = "email_verification"
+
+    def post(self, request):
+        serializer = EmailVerificationConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = _decode_user(serializer.validated_data["uid"])
+
+        if (
+            user is None
+            or not user.is_active
+            or not email_verification_token.check_token(
+                user,
+                serializer.validated_data["token"],
+            )
+        ):
+            return Response(
+                {"detail": "This verification link is invalid or expired."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        profile = user.profile
+        profile.email_verified = True
+        profile.email_verified_at = timezone.now()
+        profile.save(
+            update_fields=[
+                "email_verified",
+                "email_verified_at",
+                "updated_at",
+            ]
+        )
+
+        return Response({"message": "Email verified successfully."})
 
 # =============================================================================
 # AUTHENTICATED PROFILE

@@ -10,6 +10,7 @@ const items = [
   ['Menu Availability', 'M', '/branch-manager/menu'],
   ['Branch Profile', 'B', '/branch-manager/profile'],
   ['Notifications', 'N', '/branch-manager/notifications'],
+  ['Operational History', 'H', '/branch-manager/operations/history'],
 ]
 
 function BranchManagerLayout({ children, profile, branch }) {

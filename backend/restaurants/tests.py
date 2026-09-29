@@ -21,6 +21,7 @@ from .models import (
     FoodPreorderItem,
     Restaurant,
     RestaurantTable,
+    OperationalStatusHistory,
 )
 
 
@@ -3662,3 +3663,225 @@ class DashboardAnalyticsAPITests(APITestCase):
             with self.subTest(params=params):
                 response = self.client.get(url, params)
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class OperationalStatusHistoryAPITests(APITestCase):
+    """Status changes are attributable and never cross assignment scopes."""
+
+    def setUp(self):
+        self.restaurant = Restaurant.objects.create(name="Audit Restaurant")
+        self.other_restaurant = Restaurant.objects.create(name="Other Restaurant")
+        self.branch = Branch.objects.create(
+            restaurant=self.restaurant,
+            name="Audit Branch",
+        )
+        self.other_branch = Branch.objects.create(
+            restaurant=self.other_restaurant,
+            name="Other Branch",
+        )
+        self.table = RestaurantTable.objects.create(
+            branch=self.branch,
+            table_number="A1",
+            capacity=4,
+        )
+        self.other_table = RestaurantTable.objects.create(
+            branch=self.other_branch,
+            table_number="B1",
+            capacity=4,
+        )
+        self.customer = User.objects.create_user(
+            username="audit-customer",
+            password="testpass123",
+        )
+        self.manager = User.objects.create_user(
+            username="audit-manager",
+            password="testpass123",
+        )
+        self.manager.profile.role = UserProfile.Role.RESTAURANT_MANAGER
+        self.manager.profile.save()
+        RestaurantManagerAssignment.objects.create(
+            user=self.manager,
+            restaurant=self.restaurant,
+            is_active=True,
+        )
+        self.branch_manager = User.objects.create_user(
+            username="audit-branch-manager",
+            password="testpass123",
+        )
+        self.branch_manager.profile.role = UserProfile.Role.BRANCH_MANAGER
+        self.branch_manager.profile.save()
+        BranchManagerAssignment.objects.create(
+            user=self.branch_manager,
+            branch=self.branch,
+            is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            username="audit-admin",
+            password="testpass123",
+        )
+        self.admin.profile.role = UserProfile.Role.ADMIN
+        self.admin.profile.save()
+        self.booking = self._booking(self.branch, self.table, "PENDING")
+        self.other_booking = self._booking(
+            self.other_branch,
+            self.other_table,
+            "PENDING",
+        )
+        self.preorder = FoodPreorder.objects.create(
+            booking=self.booking,
+            status="PLACED",
+        )
+
+    def _booking(self, branch, table, booking_status):
+        return Booking.objects.create(
+            user=self.customer,
+            branch=branch,
+            table=table,
+            reservation_date=date.today(),
+            start_time=time(12),
+            end_time=time(13, 30),
+            guest_count=2,
+            customer_name="Audit Customer",
+            status=booking_status,
+        )
+
+    def test_manager_booking_change_creates_attributed_history(self):
+        self.client.force_authenticate(self.manager)
+        url = reverse("manager-reservation-status", args=[self.booking.id])
+
+        response = self.client.patch(url, {"status": "CONFIRMED"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history = OperationalStatusHistory.objects.get()
+        self.assertEqual(history.target_type, "BOOKING")
+        self.assertEqual(history.booking, self.booking)
+        self.assertIsNone(history.preorder)
+        self.assertEqual(history.actor, self.manager)
+        self.assertEqual(history.old_status, "PENDING")
+        self.assertEqual(history.new_status, "CONFIRMED")
+        self.assertEqual(history.restaurant, self.restaurant)
+        self.assertEqual(history.branch, self.branch)
+
+        # Retrying an already-applied transition is an idempotent no-op.
+        response = self.client.patch(url, {"status": "CONFIRMED"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(OperationalStatusHistory.objects.count(), 1)
+
+    def test_branch_manager_preorder_change_creates_history(self):
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.patch(
+            reverse("branch-manager-preorder-status", args=[self.preorder.id]),
+            {"status": "PREPARING"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history = OperationalStatusHistory.objects.get()
+        self.assertEqual(history.target_type, "PREORDER")
+        self.assertEqual(history.preorder, self.preorder)
+        self.assertEqual(history.actor, self.branch_manager)
+        self.assertEqual(history.old_status, "PLACED")
+        self.assertEqual(history.new_status, "PREPARING")
+
+    def test_branch_manager_booking_change_creates_history(self):
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.patch(
+            reverse(
+                "branch-manager-reservation-status",
+                args=[self.booking.id],
+            ),
+            {"status": "CONFIRMED"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        history = OperationalStatusHistory.objects.get()
+        self.assertEqual(history.target_type, "BOOKING")
+        self.assertEqual(history.actor, self.branch_manager)
+        self.assertEqual(history.old_status, "PENDING")
+        self.assertEqual(history.new_status, "CONFIRMED")
+
+    def test_rejected_transition_does_not_create_history(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.patch(
+            reverse("manager-reservation-status", args=[self.booking.id]),
+            {"status": "COMPLETED"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(OperationalStatusHistory.objects.exists())
+
+    def _create_history(self, booking, actor, old_status="PENDING"):
+        return OperationalStatusHistory.objects.create(
+            target_type="BOOKING",
+            booking=booking,
+            restaurant=booking.branch.restaurant,
+            branch=booking.branch,
+            actor=actor,
+            old_status=old_status,
+            new_status="CONFIRMED",
+        )
+
+    def test_history_feeds_apply_admin_manager_and_branch_scopes(self):
+        visible = self._create_history(self.booking, self.manager)
+        hidden = self._create_history(self.other_booking, self.admin)
+
+        cases = [
+            (self.admin, "platform-admin-operational-history", {visible.id, hidden.id}),
+            (self.manager, "manager-operational-history", {visible.id}),
+            (self.branch_manager, "branch-manager-operational-history", {visible.id}),
+        ]
+        for user, url_name, expected_ids in cases:
+            with self.subTest(role=user.profile.role):
+                self.client.force_authenticate(user)
+                response = self.client.get(reverse(url_name))
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(
+                    {row["id"] for row in response.data["results"]},
+                    expected_ids,
+                )
+
+    def test_history_feed_is_protected_and_read_only(self):
+        url = reverse("platform-admin-operational-history")
+        self.assertEqual(
+            self.client.get(url).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(
+            self.client.get(url).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(
+            self.client.post(url, {}).status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_history_feed_supports_filters_and_pagination(self):
+        booking_history = self._create_history(self.booking, self.manager)
+        OperationalStatusHistory.objects.create(
+            target_type="PREORDER",
+            preorder=self.preorder,
+            restaurant=self.restaurant,
+            branch=self.branch,
+            actor=self.branch_manager,
+            old_status="PLACED",
+            new_status="PREPARING",
+        )
+        self.client.force_authenticate(self.admin)
+        url = reverse("platform-admin-operational-history")
+
+        response = self.client.get(url, {
+            "target_type": "booking",
+            "actor": self.manager.id,
+            "search": "Audit Customer",
+            "page_size": 1,
+        })
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["id"], booking_history.id)
+
+        invalid = self.client.get(url, {"from_date": "not-a-date"})
+        self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)

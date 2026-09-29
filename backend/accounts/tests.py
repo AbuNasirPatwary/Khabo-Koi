@@ -748,6 +748,7 @@ class ProfileAPITests(APITestCase):
                 "id": self.customer.id,
                 "username": self.customer.username,
                 "email": self.customer.email,
+                "email_verified": False,
                 "role": UserProfile.Role.CUSTOMER,
                 "assigned_restaurants": [],
             },

@@ -15,6 +15,10 @@ import Profile from './pages/Profile'
 import MyBookings from './pages/MyBookings'
 import FoodPreorderPayment from './pages/FoodPreorderPayment'
 import BookingConfirmation from './pages/BookingConfirmation'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
+import VerifyEmail from './pages/VerifyEmail'
+import NotFound from './pages/NotFound'
 
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminBookings from './pages/admin/AdminBookings'
@@ -22,6 +26,7 @@ import AdminLogin from './pages/admin/AdminLogin'
 import AdminManagerAssignments from './pages/admin/AdminManagerAssignments'
 import AdminRestaurants from './pages/admin/AdminRestaurants'
 import AdminUsers from './pages/admin/AdminUsers'
+import AdminStatusHistory from './pages/admin/AdminStatusHistory'
 import ProtectedAdminRoute from './components/admin/ProtectedAdminRoute'
 
 import ManagerDashboard from './pages/manager/ManagerDashboard'
@@ -31,6 +36,7 @@ import ManagerReservations from './pages/manager/ManagerReservations'
 import ManagerTables from './pages/manager/ManagerTables'
 import ManagerMenu from './pages/manager/ManagerMenu'
 import ManagerBranches from './pages/manager/ManagerBranches'
+import ManagerStatusHistory from './pages/manager/ManagerStatusHistory'
 import ProtectedManagerRoute from './components/manager/ProtectedManagerRoute'
 import AdminBranchManagerAssignments from './pages/admin/AdminBranchManagerAssignments'
 import BranchManagerLogin from './pages/branchManager/BranchManagerLogin'
@@ -41,6 +47,7 @@ import BranchManagerTables from './pages/branchManager/BranchManagerTables'
 import BranchManagerMenu from './pages/branchManager/BranchManagerMenu'
 import BranchManagerProfile from './pages/branchManager/BranchManagerProfile'
 import BranchManagerNotifications from './pages/branchManager/BranchManagerNotifications'
+import BranchManagerStatusHistory from './pages/branchManager/BranchManagerStatusHistory'
 import ProtectedBranchManagerRoute from './components/branchManager/ProtectedBranchManagerRoute'
 
 
@@ -92,6 +99,21 @@ function App() {
         <Route
           path="/register"
           element={<Register />}
+        />
+
+        <Route
+          path="/forgot-password"
+          element={<ForgotPassword />}
+        />
+
+        <Route
+          path="/reset-password"
+          element={<ResetPassword />}
+        />
+
+        <Route
+          path="/verify-email"
+          element={<VerifyEmail />}
         />
 
         <Route
@@ -153,6 +175,15 @@ function App() {
           element={(
             <ProtectedAdminRoute>
               <AdminBookings />
+            </ProtectedAdminRoute>
+          )}
+        />
+
+        <Route
+          path="/platform-admin/operations/history"
+          element={(
+            <ProtectedAdminRoute>
+              <AdminStatusHistory />
             </ProtectedAdminRoute>
           )}
         />
@@ -229,6 +260,15 @@ function App() {
           )}
         />
 
+        <Route
+          path="/manager/operations/history"
+          element={(
+            <ProtectedManagerRoute>
+              <ManagerStatusHistory />
+            </ProtectedManagerRoute>
+          )}
+        />
+
 
         {/* BRANCH MANAGER */}
 
@@ -241,11 +281,14 @@ function App() {
         <Route path="/branch-manager/menu" element={<ProtectedBranchManagerRoute><BranchManagerMenu /></ProtectedBranchManagerRoute>} />
         <Route path="/branch-manager/profile" element={<ProtectedBranchManagerRoute><BranchManagerProfile /></ProtectedBranchManagerRoute>} />
         <Route path="/branch-manager/notifications" element={<ProtectedBranchManagerRoute><BranchManagerNotifications /></ProtectedBranchManagerRoute>} />
+        <Route path="/branch-manager/operations/history" element={<ProtectedBranchManagerRoute><BranchManagerStatusHistory /></ProtectedBranchManagerRoute>} />
 
         <Route
           path="/platform-admin/branch-manager-assignments"
           element={<ProtectedAdminRoute><AdminBranchManagerAssignments /></ProtectedAdminRoute>}
         />
+
+        <Route path="*" element={<NotFound />} />
 
       </Routes>
 

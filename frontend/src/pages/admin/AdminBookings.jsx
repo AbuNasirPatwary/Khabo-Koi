@@ -5,6 +5,8 @@ import {
   getPlatformAdminProfile,
 } from '../../api/adminApi'
 import AdminLayout from '../../components/admin/AdminLayout'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 const STATUS_STYLES = {
@@ -61,6 +63,7 @@ function AdminBookings() {
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const hasInitialLoadError = Boolean(errorMessage && bookings.length === 0)
 
   async function loadBookings({ showLoader = true } = {}) {
@@ -172,6 +175,8 @@ function AdminBookings() {
       0,
     ),
   }), [bookings])
+  const safePage = clampPage(currentPage, filteredBookings.length)
+  const visibleBookings = paginateItems(filteredBookings, safePage)
 
   return (
     <AdminLayout profile={profile}>
@@ -250,7 +255,7 @@ function AdminBookings() {
               <span className="sr-only">Search customers</span>
               <input
                 value={customerSearch}
-                onChange={(event) => setCustomerSearch(event.target.value)}
+                onChange={(event) => { setCustomerSearch(event.target.value); setCurrentPage(1) }}
                 placeholder="Search customer, email, or phone"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-orange-400 focus:bg-white"
               />
@@ -259,7 +264,7 @@ function AdminBookings() {
               <span className="sr-only">Filter by restaurant</span>
               <select
                 value={restaurantFilter}
-                onChange={(event) => setRestaurantFilter(event.target.value)}
+                onChange={(event) => { setRestaurantFilter(event.target.value); setCurrentPage(1) }}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
               >
                 <option value="ALL">All restaurants</option>
@@ -272,7 +277,7 @@ function AdminBookings() {
               <span className="sr-only">Filter by status</span>
               <select
                 value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
+                onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1) }}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
               >
                 <option value="ALL">All statuses</option>
@@ -307,7 +312,7 @@ function AdminBookings() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {filteredBookings.map((booking) => (
+              {visibleBookings.map((booking) => (
                 <article
                   key={booking.id}
                   className="grid gap-5 p-5 xl:grid-cols-[minmax(190px,1.15fr)_minmax(190px,1fr)_minmax(210px,1.15fr)_130px] xl:items-center"
@@ -374,6 +379,7 @@ function AdminBookings() {
               ))}
             </div>
           )}
+          <PaginationControls currentPage={safePage} itemCount={filteredBookings.length} onPageChange={setCurrentPage} itemLabel="bookings" />
         </section>
       </main>
     </AdminLayout>
