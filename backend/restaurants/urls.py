@@ -32,6 +32,9 @@ from .views import (
     BranchManagerPreorderListAPIView,
     BranchManagerPreorderStatusAPIView,
     BranchManagerNotificationsAPIView,
+    PlatformAdminOperationalHistoryAPIView,
+    ManagerOperationalHistoryAPIView,
+    BranchManagerOperationalHistoryAPIView,
 )
 
 
@@ -55,6 +58,12 @@ urlpatterns = [
         'admin/bookings/',
         PlatformAdminBookingListAPIView.as_view(),
         name='platform-admin-booking-list',
+    ),
+
+    path(
+        'admin/operations/history/',
+        PlatformAdminOperationalHistoryAPIView.as_view(),
+        name='platform-admin-operational-history',
     ),
 
     path(
@@ -167,6 +176,12 @@ urlpatterns = [
     ),
 
     path(
+        'manager/operations/history/',
+        ManagerOperationalHistoryAPIView.as_view(),
+        name='manager-operational-history',
+    ),
+
+    path(
         'bookings/<int:booking_id>/preorder/',
         FoodPreorderCreateUpdateAPIView.as_view(),
         name='food-preorder-create-update',
@@ -230,6 +245,12 @@ urlpatterns = [
         'branch-manager/notifications/',
         BranchManagerNotificationsAPIView.as_view(),
         name='branch-manager-notifications',
+    ),
+
+    path(
+        'branch-manager/operations/history/',
+        BranchManagerOperationalHistoryAPIView.as_view(),
+        name='branch-manager-operational-history',
     ),
 
 ]

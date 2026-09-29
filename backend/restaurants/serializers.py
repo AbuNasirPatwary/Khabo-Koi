@@ -10,6 +10,7 @@ from .models import (
     BranchMenuAvailability,
     FoodPreorder,
     FoodPreorderItem,
+    OperationalStatusHistory,
 )
 
 
@@ -652,3 +653,57 @@ class FoodPreorderSerializer(serializers.ModelSerializer):
             "created_at", "updated_at", "items",
         ]
         read_only_fields = fields
+
+
+class OperationalStatusHistorySerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(
+        source="actor.username",
+        read_only=True,
+        default=None,
+    )
+    actor_email = serializers.CharField(
+        source="actor.email",
+        read_only=True,
+        default=None,
+    )
+    restaurant_name = serializers.CharField(
+        source="restaurant.name",
+        read_only=True,
+    )
+    branch_name = serializers.CharField(
+        source="branch.name",
+        read_only=True,
+    )
+    target_id = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OperationalStatusHistory
+        fields = [
+            "id",
+            "target_type",
+            "target_id",
+            "booking",
+            "preorder",
+            "restaurant",
+            "restaurant_name",
+            "branch",
+            "branch_name",
+            "customer_name",
+            "actor",
+            "actor_username",
+            "actor_email",
+            "old_status",
+            "new_status",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_target_id(self, obj):
+        return obj.booking_id or obj.preorder_id
+
+    def get_customer_name(self, obj):
+        booking = obj.booking
+        if obj.preorder_id:
+            booking = obj.preorder.booking
+        return booking.customer_name if booking else ""

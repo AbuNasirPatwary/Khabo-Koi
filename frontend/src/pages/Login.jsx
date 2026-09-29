@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { loginUser } from '../api/api'
 
@@ -163,6 +163,15 @@ function Login() {
 
 
                 </form>
+
+                <div className="mt-4 text-right">
+                    <Link
+                        to="/forgot-password"
+                        className="text-sm font-semibold text-orange-600 hover:text-orange-700"
+                    >
+                        Forgot your password?
+                    </Link>
+                </div>
 
 
 

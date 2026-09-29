@@ -429,3 +429,83 @@ class FoodPreorderItem(models.Model):
 
     def __str__(self):
         return f"{self.food_item.name} x {self.quantity}"
+
+
+class OperationalStatusHistory(models.Model):
+    """Immutable audit record for reservation and pre-order status changes."""
+
+    TARGET_CHOICES = [
+        ("BOOKING", "Booking"),
+        ("PREORDER", "Food pre-order"),
+    ]
+
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES)
+    booking = models.ForeignKey(
+        Booking,
+        on_delete=models.PROTECT,
+        related_name="status_history",
+        null=True,
+        blank=True,
+    )
+    preorder = models.ForeignKey(
+        FoodPreorder,
+        on_delete=models.PROTECT,
+        related_name="status_history",
+        null=True,
+        blank=True,
+    )
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.PROTECT,
+        related_name="operational_status_history",
+    )
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.PROTECT,
+        related_name="operational_status_history",
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name="operational_status_changes",
+        null=True,
+        blank=True,
+    )
+    old_status = models.CharField(max_length=20)
+    new_status = models.CharField(max_length=20)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        target_type="BOOKING",
+                        booking__isnull=False,
+                        preorder__isnull=True,
+                    )
+                    | models.Q(
+                        target_type="PREORDER",
+                        booking__isnull=True,
+                        preorder__isnull=False,
+                    )
+                ),
+                name="history_target_matches_type",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(old_status=models.F("new_status")),
+                name="history_records_real_change",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["target_type", "created_at"]),
+            models.Index(fields=["restaurant", "created_at"]),
+            models.Index(fields=["branch", "created_at"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.get_target_type_display()} "
+            f"{self.old_status} -> {self.new_status}"
+        )

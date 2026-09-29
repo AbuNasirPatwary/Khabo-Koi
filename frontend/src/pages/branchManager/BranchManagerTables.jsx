@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   createBranchManagerTable,
   deactivateBranchManagerTable,
@@ -8,6 +8,9 @@ import {
 } from '../../api/branchManagerApi'
 import BranchManagerLayout from '../../components/branchManager/BranchManagerLayout'
 import useBranchManagerShell from '../../components/branchManager/useBranchManagerShell'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 const empty = { table_number: '', capacity: 2, seating_type: 'INDOOR', is_active: true }
 
@@ -17,6 +20,9 @@ function BranchManagerTables() {
   const [form, setForm] = useState(empty)
   const [editing, setEditing] = useState(null)
   const [message, setMessage] = useState('')
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingDeactivate, setPendingDeactivate] = useState(null)
 
   useEffect(() => {
     getBranchManagerTables().then(setRows).catch((err) => setMessage(err.message))
@@ -51,12 +57,24 @@ function BranchManagerTables() {
     })
   }
 
-  async function deactivate(row) {
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return !query ? rows : rows.filter((row) => (
+      [row.table_number, row.seating_type, row.capacity]
+        .some((value) => String(value).toLowerCase().includes(query))
+    ))
+  }, [rows, search])
+  const safePage = clampPage(currentPage, filteredRows.length)
+  const visibleRows = paginateItems(filteredRows, safePage)
+
+  async function deactivate() {
+    if (!pendingDeactivate) return
     try {
-      await deactivateBranchManagerTable(row.id)
+      await deactivateBranchManagerTable(pendingDeactivate.id)
       setRows((current) => current.map((item) => (
-        item.id === row.id ? { ...item, is_active: false } : item
+        item.id === pendingDeactivate.id ? { ...item, is_active: false } : item
       )))
+      setPendingDeactivate(null)
     } catch (err) {
       setMessage(err.message)
     }
@@ -87,8 +105,9 @@ function BranchManagerTables() {
           </div>
         </form>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map((row) => (
+        <label className="mt-6 block"><span className="sr-only">Search tables</span><input value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1) }} placeholder="Search table, seating, or capacity" className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" /></label>
+        <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleRows.map((row) => (
             <article key={row.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between">
                 <div><p className="text-xs font-bold uppercase text-orange-600">{row.seating_type}</p><h3 className="mt-1 text-xl font-bold">Table {row.table_number}</h3></div>
@@ -97,12 +116,15 @@ function BranchManagerTables() {
               <p className="mt-3 text-sm text-slate-500">Capacity: {row.capacity} guests</p>
               <div className="mt-5 flex gap-2">
                 <button type="button" onClick={() => edit(row)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Edit</button>
-                {row.is_active && <button type="button" onClick={() => deactivate(row)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}
+                {row.is_active && <button type="button" onClick={() => setPendingDeactivate(row)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700">Deactivate</button>}
               </div>
             </article>
           ))}
         </section>
+        {filteredRows.length === 0 && <p className="mt-5 text-center text-sm text-slate-500">No tables match your search.</p>}
+        <PaginationControls currentPage={safePage} itemCount={filteredRows.length} onPageChange={setCurrentPage} itemLabel="tables" />
       </main>
+      {pendingDeactivate && <ConfirmDialog title="Deactivate this table?" description={`Table ${pendingDeactivate.table_number} will stop accepting new reservations.`} confirmLabel="Deactivate" onCancel={() => setPendingDeactivate(null)} onConfirm={deactivate} />}
     </BranchManagerLayout>
   )
 }

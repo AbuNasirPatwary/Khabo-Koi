@@ -8,6 +8,8 @@ import {
 } from '../../api/adminApi'
 import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 // These values deliberately mirror UserProfile.Role in Django. The readable
@@ -53,6 +55,7 @@ function AdminUsers() {
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const hasInitialLoadError = Boolean(errorMessage && users.length === 0)
 
   async function loadUsers() {
@@ -169,6 +172,8 @@ function AdminUsers() {
       (user) => !user.is_active,
     ).length,
   }), [users])
+  const safePage = clampPage(currentPage, filteredUsers.length)
+  const visibleUsers = paginateItems(filteredUsers, safePage)
 
   function requestRoleChange(user) {
     const nextRole = draftRoles[user.id]
@@ -320,7 +325,7 @@ function AdminUsers() {
               <span className="sr-only">Search users</span>
               <input
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => { setSearchTerm(event.target.value); setCurrentPage(1) }}
                 placeholder="Search by username or email"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-orange-400 focus:bg-white focus:ring-4 focus:ring-orange-100"
               />
@@ -329,7 +334,7 @@ function AdminUsers() {
             <select
               aria-label="Filter users by role"
               value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value)}
+              onChange={(event) => { setRoleFilter(event.target.value); setCurrentPage(1) }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
             >
               <option value="ALL">All roles</option>
@@ -346,7 +351,7 @@ function AdminUsers() {
             <select
               aria-label="Filter users by account status"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1) }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
             >
               <option value="ALL">All statuses</option>
@@ -385,7 +390,7 @@ function AdminUsers() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredUsers.map((user) => {
+                  {visibleUsers.map((user) => {
                     const isCurrentAdmin = user.id === profile?.id
                     const hasRoleChange = draftRoles[user.id] !== user.role
 
@@ -479,6 +484,7 @@ function AdminUsers() {
               </table>
             </div>
           )}
+          <PaginationControls currentPage={safePage} itemCount={filteredUsers.length} onPageChange={setCurrentPage} itemLabel="users" />
         </section>
 
         <p className="mt-4 text-xs leading-5 text-slate-400">

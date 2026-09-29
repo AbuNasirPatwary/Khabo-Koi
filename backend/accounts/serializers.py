@@ -72,6 +72,30 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Validate the address without revealing whether an account exists."""
+
+    email = serializers.EmailField()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Accept the opaque reset-link values and the replacement password."""
+
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+
+class EmailVerificationConfirmSerializer(serializers.Serializer):
+    """Accept the opaque values included in an email verification link."""
+
+    uid = serializers.CharField()
+    token = serializers.CharField()
+
+
 # =============================================================================
 # AUTHENTICATED USER PROFILE
 # =============================================================================
@@ -85,6 +109,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
 
     role = serializers.SerializerMethodField()
+    email_verified = serializers.SerializerMethodField()
 
     assigned_restaurants = (
         serializers.SerializerMethodField()
@@ -98,6 +123,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "email",
+            "email_verified",
             "role",
             "assigned_restaurants",
         ]
@@ -119,6 +145,10 @@ class ProfileSerializer(serializers.ModelSerializer):
             return None
 
         return profile.role
+
+    def get_email_verified(self, user):
+        profile = getattr(user, "profile", None)
+        return bool(profile and profile.email_verified)
 
     def get_assigned_restaurants(self, user):
 

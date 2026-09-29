@@ -8,7 +8,10 @@ import {
   getRestaurantsForAdminAssignment,
   updatePlatformAdminBranchManagerAssignment,
 } from '../../api/adminApi'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 function AdminBranchManagerAssignments() {
   const [profile, setProfile] = useState(null)
@@ -18,6 +21,11 @@ function AdminBranchManagerAssignments() {
   const [userId, setUserId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pendingAssignment, setPendingAssignment] = useState(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   async function load() {
     try {
@@ -79,6 +87,25 @@ function AdminBranchManagerAssignments() {
     )),
     [restaurants],
   )
+  const filteredAssignments = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+
+    return assignments.filter((assignment) => {
+      const matchesSearch = !query || [
+        assignment.user.username,
+        assignment.user.email,
+        assignment.branch.restaurant_name,
+        assignment.branch.name,
+      ].some((value) => value?.toLowerCase().includes(query))
+      const matchesStatus = statusFilter === 'ALL'
+        || (statusFilter === 'ACTIVE' && assignment.is_active)
+        || (statusFilter === 'INACTIVE' && !assignment.is_active)
+
+      return matchesSearch && matchesStatus
+    })
+  }, [assignments, searchTerm, statusFilter])
+  const safePage = clampPage(currentPage, filteredAssignments.length)
+  const visibleAssignments = paginateItems(filteredAssignments, safePage)
 
   async function create(event) {
     event.preventDefault()
@@ -96,15 +123,25 @@ function AdminBranchManagerAssignments() {
     }
   }
 
-  async function toggle(assignment) {
+  async function toggle() {
+    if (!pendingAssignment) return
+
+    setIsSaving(true)
     try {
       await updatePlatformAdminBranchManagerAssignment(
-        assignment.id,
-        !assignment.is_active,
+        pendingAssignment.id,
+        !pendingAssignment.is_active,
       )
+      setMessage({
+        type: 'success',
+        text: `Branch access ${pendingAssignment.is_active ? 'deactivated' : 'reactivated'}.`,
+      })
+      setPendingAssignment(null)
       await load()
     } catch (err) {
       setMessage({ type: 'error', text: err.message })
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -147,21 +184,48 @@ function AdminBranchManagerAssignments() {
         </form>
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
+          <div className="grid gap-3 border-b border-slate-200 p-5 md:grid-cols-[1fr_180px]">
+            <label>
+              <span className="sr-only">Search Branch Manager assignments</span>
+              <input value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setCurrentPage(1) }} placeholder="Search manager, restaurant, or branch" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
+            </label>
+            <select aria-label="Filter Branch Manager assignments by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1) }} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <option value="ALL">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+          </div>
+          <div className="overflow-x-auto">
+          <table className="min-w-[760px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">Manager</th><th className="px-5 py-3">Restaurant / Branch</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {assignments.map((assignment) => (
+              {visibleAssignments.map((assignment) => (
                 <tr key={assignment.id}>
                   <td className="px-5 py-4"><p className="font-semibold">{assignment.user.username}</p><p className="text-xs text-slate-500">{assignment.user.email}</p></td>
                   <td className="px-5 py-4">{assignment.branch.restaurant_name}<p className="text-xs text-slate-500">{assignment.branch.name}</p></td>
                   <td className="px-5 py-4">{assignment.is_active ? 'Active' : 'Inactive'}</td>
-                  <td className="px-5 py-4"><button type="button" onClick={() => toggle(assignment)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">{assignment.is_active ? 'Deactivate' : 'Reactivate'}</button></td>
+                  <td className="px-5 py-4"><button type="button" onClick={() => setPendingAssignment(assignment)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">{assignment.is_active ? 'Deactivate' : 'Reactivate'}</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
+          {filteredAssignments.length === 0 && <p className="p-10 text-center text-sm text-slate-500">No Branch Manager assignments match these filters.</p>}
+          <PaginationControls currentPage={safePage} itemCount={filteredAssignments.length} onPageChange={setCurrentPage} itemLabel="assignments" />
         </section>
       </main>
+      {pendingAssignment && (
+        <ConfirmDialog
+          eyebrow="Branch access"
+          title={`${pendingAssignment.is_active ? 'Deactivate' : 'Reactivate'} this assignment?`}
+          description={`${pendingAssignment.user.username} will ${pendingAssignment.is_active ? 'lose' : 'regain'} access to ${pendingAssignment.branch.name}.`}
+          confirmLabel={pendingAssignment.is_active ? 'Deactivate' : 'Reactivate'}
+          tone={pendingAssignment.is_active ? 'danger' : 'neutral'}
+          isSaving={isSaving}
+          onCancel={() => setPendingAssignment(null)}
+          onConfirm={toggle}
+        />
+      )}
     </AdminLayout>
   )
 }

@@ -7,6 +7,8 @@ import {
 } from '../../api/adminApi'
 import AdminConfirmDialog from '../../components/admin/AdminConfirmDialog'
 import AdminLayout from '../../components/admin/AdminLayout'
+import PaginationControls from '../../components/PaginationControls'
+import { clampPage, paginateItems } from '../../utils/pagination'
 
 
 function AdminRestaurants() {
@@ -19,6 +21,7 @@ function AdminRestaurants() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [pendingRestaurant, setPendingRestaurant] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
   const hasInitialLoadError = Boolean(errorMessage && restaurants.length === 0)
 
   async function loadRestaurants({ showLoader = true } = {}) {
@@ -105,6 +108,8 @@ function AdminRestaurants() {
       0,
     ),
   }), [restaurants])
+  const safePage = clampPage(currentPage, filteredRestaurants.length)
+  const visibleRestaurants = paginateItems(filteredRestaurants, safePage)
 
   async function confirmStatusChange() {
     if (!pendingRestaurant) {
@@ -207,7 +212,7 @@ function AdminRestaurants() {
               <span className="sr-only">Search restaurants</span>
               <input
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => { setSearchTerm(event.target.value); setCurrentPage(1) }}
                 placeholder="Search restaurant or cuisine"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-orange-400 focus:bg-white"
               />
@@ -215,7 +220,7 @@ function AdminRestaurants() {
             <select
               aria-label="Filter restaurants by status"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => { setStatusFilter(event.target.value); setCurrentPage(1) }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-orange-400 focus:bg-white"
             >
               <option value="ALL">All restaurants</option>
@@ -243,7 +248,7 @@ function AdminRestaurants() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {filteredRestaurants.map((restaurant) => (
+              {visibleRestaurants.map((restaurant) => (
                 <article
                   key={restaurant.id}
                   className="grid gap-5 p-5 hover:bg-slate-50/60 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
@@ -300,6 +305,7 @@ function AdminRestaurants() {
               ))}
             </div>
           )}
+          <PaginationControls currentPage={safePage} itemCount={filteredRestaurants.length} onPageChange={setCurrentPage} itemLabel="restaurants" />
         </section>
 
         <p className="mt-4 text-xs leading-5 text-slate-400">

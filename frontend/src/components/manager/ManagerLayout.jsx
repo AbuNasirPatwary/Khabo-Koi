@@ -38,6 +38,11 @@ const navigationItems = [
     symbol: 'L',
     to: '/manager/branches',
   },
+  {
+    label: 'Operational History',
+    symbol: 'H',
+    to: '/manager/operations/history',
+  },
 ]
 
 

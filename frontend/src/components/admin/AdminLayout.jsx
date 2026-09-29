@@ -39,6 +39,11 @@ const navigationItems = [
     to: '/platform-admin/bookings',
   },
   {
+    label: 'Operational History',
+    symbol: 'H',
+    to: '/platform-admin/operations/history',
+  },
+  {
     label: 'System Settings',
     symbol: 'S',
     to: null,
