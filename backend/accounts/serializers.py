@@ -857,30 +857,36 @@ class PlatformAdminBranchManagerAssignmentStatusSerializer(serializers.ModelSeri
 
     @transaction.atomic
     def update(self, assignment, validated_data):
+        # Lock each concrete row separately. Joining ``user__profile`` here
+        # creates a LEFT OUTER JOIN because a legacy User may have no profile;
+        # PostgreSQL does not allow SELECT FOR UPDATE on that nullable side.
+        user = User.objects.select_for_update().get(id=assignment.user_id)
+        branch = (
+            Branch.objects
+            .select_for_update()
+            .select_related("restaurant")
+            .get(id=assignment.branch_id)
+        )
         assignment = (
             BranchManagerAssignment.objects
             .select_for_update()
-            .select_related(
-                "user", "user__profile",
-                "branch", "branch__restaurant",
-            )
             .get(id=assignment.id)
         )
 
         is_active = validated_data["is_active"]
 
         if is_active:
-            if not assignment.user.is_active:
+            if not user.is_active:
                 raise serializers.ValidationError({
                     "is_active": "An inactive user cannot receive branch access."
                 })
-            if assignment.user.profile.role != UserProfile.Role.BRANCH_MANAGER:
+            if user.profile.role != UserProfile.Role.BRANCH_MANAGER:
                 raise serializers.ValidationError({
                     "is_active": "Only a Branch Manager assignment can be activated."
                 })
             if (
-                not assignment.branch.is_active
-                or not assignment.branch.restaurant.is_active
+                not branch.is_active
+                or not branch.restaurant.is_active
             ):
                 raise serializers.ValidationError({
                     "is_active": "The assigned branch and restaurant must be active."

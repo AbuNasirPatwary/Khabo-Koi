@@ -50,6 +50,7 @@ import BranchManagerNotifications from './pages/branchManager/BranchManagerNotif
 import BranchManagerStatusHistory from './pages/branchManager/BranchManagerStatusHistory'
 import ProtectedBranchManagerRoute from './components/branchManager/ProtectedBranchManagerRoute'
 import AIDiningAssistant from './pages/AIDiningAssistant'
+import InteractiveFoodBackground from './components/InteractiveFoodBackground'
 
 
 function App() {
@@ -57,6 +58,9 @@ function App() {
   return (
 
     <BrowserRouter>
+
+      {/* Decorative motion is limited to the customer-facing experience. */}
+      <InteractiveFoodBackground />
 
       <Routes>
 
