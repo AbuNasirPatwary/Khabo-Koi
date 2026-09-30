@@ -19,6 +19,7 @@ from restaurants.models import (
 )
 
 from .models import (
+    BranchManagerAssignment,
     RestaurantManagerAssignment,
     UserProfile,
 )
@@ -30,6 +31,59 @@ from .permissions import (
 )
 
 User = get_user_model()
+
+
+class PlatformAdminBranchManagerAssignmentStatusTests(APITestCase):
+    """Regression coverage for the PostgreSQL-safe assignment row locks."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="branch-status-admin",
+            password="Strong-Test-827!",
+        )
+        self.admin.profile.role = UserProfile.Role.ADMIN
+        self.admin.profile.save(update_fields=["role"])
+        self.manager = User.objects.create_user(
+            username="branch-status-manager",
+            password="Strong-Test-827!",
+        )
+        self.manager.profile.role = UserProfile.Role.BRANCH_MANAGER
+        self.manager.profile.save(update_fields=["role"])
+        restaurant = Restaurant.objects.create(name="Status Test Restaurant")
+        branch = Branch.objects.create(
+            restaurant=restaurant,
+            name="Status Test Branch",
+            is_active=True,
+        )
+        self.assignment = BranchManagerAssignment.objects.create(
+            user=self.manager,
+            branch=branch,
+            assigned_by=self.admin,
+        )
+        self.url = reverse(
+            "platform_admin_branch_manager_assignment_status",
+            kwargs={"assignment_id": self.assignment.id},
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_admin_can_deactivate_and_reactivate_branch_assignment(self):
+        response = self.client.patch(
+            self.url,
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assignment.refresh_from_db()
+        self.assertFalse(self.assignment.is_active)
+
+        response = self.client.patch(
+            self.url,
+            {"is_active": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assignment.refresh_from_db()
+        self.assertTrue(self.assignment.is_active)
 
 
 # =============================================================================
