@@ -5,13 +5,14 @@ import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 
 import sultansDineImage from '../assets/images/landing/sultans-dine.png'
+import { API_URL } from '../api/adminApi'
 
 
 // =============================================================================
 // DJANGO API
 // =============================================================================
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api'
+const API_BASE_URL = API_URL
 
 
 // =============================================================================

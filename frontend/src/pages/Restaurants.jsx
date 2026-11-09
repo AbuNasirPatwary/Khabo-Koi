@@ -9,6 +9,7 @@ import sultansDineImage from '../assets/images/landing/sultans-dine.png'
 import chilloxImage from '../assets/images/landing/chillox.png'
 import madchefImage from '../assets/images/landing/madchef.png'
 import kacchiBhaiImage from '../assets/images/landing/kacchi-bhai.png'
+import { API_URL } from '../api/adminApi'
 
 
 // -----------------------------------------------------------------------------
@@ -17,7 +18,7 @@ import kacchiBhaiImage from '../assets/images/landing/kacchi-bhai.png'
 // Restaurant information now comes from PostgreSQL through Django REST API.
 // -----------------------------------------------------------------------------
 
-const API_URL = 'http://127.0.0.1:8000/api/restaurants/'
+
 
 
 // -----------------------------------------------------------------------------
@@ -94,7 +95,7 @@ function Restaurants() {
 
 
                 const response = await fetch(
-                    API_URL,
+                    `${API_URL}/restaurants/`,
                     {
                         signal: controller.signal,
                     }

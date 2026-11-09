@@ -13,7 +13,10 @@ import seafoodImage from '../assets/images/landing/seafood.png'
 import dessertsImage from '../assets/images/landing/desserts.png'
 
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api'
+const API_BASE_URL = (
+    import.meta.env.VITE_API_URL ||
+    'http://127.0.0.1:8000/api'
+).replace(/\/+$/, '')
 
 
 const categoryImages = {
@@ -766,8 +769,8 @@ function FoodPreorderPayment() {
                                                 <article
                                                     key={food.id}
                                                     className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition ${quantity > 0
-                                                            ? 'border-orange-400 ring-2 ring-orange-100'
-                                                            : 'border-gray-200'
+                                                        ? 'border-orange-400 ring-2 ring-orange-100'
+                                                        : 'border-gray-200'
                                                         }`}
                                                 >
 
@@ -1224,8 +1227,8 @@ function FoodPreorderPayment() {
                                                 )
                                             }}
                                             className={`rounded-xl border px-3 py-3 text-sm font-bold ${paymentMethod === value
-                                                    ? 'border-orange-500 bg-orange-50 text-orange-600'
-                                                    : 'border-gray-200 text-gray-600'
+                                                ? 'border-orange-500 bg-orange-50 text-orange-600'
+                                                : 'border-gray-200 text-gray-600'
                                                 }`}
                                         >
                                             {label}
